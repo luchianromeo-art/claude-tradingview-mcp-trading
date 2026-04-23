@@ -1,0 +1,26 @@
+# railway.toml — Dual Bot Deployment
+# Bot1: VWAP + EMA8 + RSI3 | Bot2: EMA20 + EMA50 + RSI14 + BB + Volume
+# Both run every 30 minutes on spot paper trading
+
+[build]
+builder = "nixpacks"
+
+# ── BOT 1 ──────────────────────────────────────────────────────────────────────
+[[services]]
+name = "bot1-vwap-ema8-rsi3"
+
+[services.deploy]
+startCommand = "node bot.js"
+
+[services.cron]
+schedule = "*/30 * * * *"
+
+# ── BOT 2 ──────────────────────────────────────────────────────────────────────
+[[services]]
+name = "bot2-ema20-ema50-bb-rsi14"
+
+[services.deploy]
+startCommand = "node bot2.js"
+
+[services.cron]
+schedule = "*/30 * * * *"

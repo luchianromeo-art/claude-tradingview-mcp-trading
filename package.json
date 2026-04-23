@@ -1,15 +1,16 @@
 {
   "name": "claude-tradingview-mcp-trading",
-  "version": "1.0.0",
-  "description": "Automated trading bot — Claude + TradingView strategy + BitGet execution",
+  "version": "2.0.0",
+  "description": "Dual crypto trading bots — BitGet Spot Paper Trading",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
-    "dev": "node bot.js"
+    "bot1": "node bot.js",
+    "bot2": "node bot2.js",
+    "both": "node bot.js && node bot2.js"
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
-    "node-fetch": "^3.3.2"
+    "ccxt": "^4.3.0"
   },
   "engines": {
     "node": ">=18.0.0"
