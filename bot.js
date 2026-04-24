@@ -1,10 +1,13 @@
-// bot.js — VWAP + EMA8 + RSI3 | TP 3% | SL 1.5% | Paper Trading Spot
+// bot.js — VWAP + EMA8 + RSI3 | TP 3% | SL 1.5%
 // Exchange: BitGet | Timeframe: 1H | Symbols: BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT
+// Set PAPER_TRADING=false in Railway Variables to enable real trading
 
 const ccxt = require('ccxt');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+
+const PAPER_TRADING = process.env.PAPER_TRADING !== "false"; // default: paper ON
 
 const CONFIG = {
   exchange: 'bitget',
@@ -13,7 +16,7 @@ const CONFIG = {
   limit: 100,
   takeProfitPct: 0.03,
   stopLossPct: 0.015,
-  tradeSize: 10,
+  tradeSize: PAPER_TRADING ? 10 : (parseInt(process.env.TRADE_SIZE) || 10),
   csvFile: path.join(__dirname, 'trades.csv'),
   github: {
     token: process.env.GITHUB_TOKEN || '',

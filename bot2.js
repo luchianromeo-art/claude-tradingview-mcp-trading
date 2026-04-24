@@ -6,6 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
+const PAPER_TRADING = process.env.PAPER_TRADING !== "false"; // default: paper ON
+
 const CONFIG = {
   exchange: 'bitget',
   symbols: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'DOGE/USDT'],
@@ -13,7 +15,7 @@ const CONFIG = {
   limit: 100,
   takeProfitPct: 0.03,
   stopLossPct: 0.015,
-  tradeSize: 10,
+  tradeSize: PAPER_TRADING ? 10 : (parseInt(process.env.TRADE_SIZE) || 10),
   bbPeriod: 20,
   bbStdDev: 2,
   rsiPeriod: 14,
