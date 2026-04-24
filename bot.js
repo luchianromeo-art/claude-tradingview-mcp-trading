@@ -1,3 +1,4 @@
+require("dotenv").config();
 // bot.js — VWAP + EMA8 + RSI3 | TP 3% | SL 1.5%
 // Exchange: BitGet | Timeframe: 1H | Symbols: BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT
 // Set PAPER_TRADING=false in Railway Variables to enable real trading

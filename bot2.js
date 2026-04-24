@@ -1,3 +1,4 @@
+require("dotenv").config();
 // bot2.js — EMA20 + EMA50 + RSI14 + Bollinger Bands + Volume | TP 3% | SL 1.5%
 // Exchange: BitGet | Timeframe: 1H | Results: trades2.csv
 
