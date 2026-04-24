@@ -1,6 +1,0 @@
-Date;Time (UTC);Exchange;Symbol;Side;Quantity;Price;Total USD;Fee (est.);Net Amount;Order ID;Mode;Notes;;;;;
-;;;;;;;;;;;NOTE;Hey, if you're at this stage of the video, you must be enjoying it... perhaps you could hit subscribe now? :);;;;;
-23.04.2026;11:36:35;BitGet;BTCUSDT;;;77523.99;;;;BLOCKED;BLOCKED;Failed: RSI(3) above 70 (reversal setup in downtrend);;;;;
-23.04.2026;11:45:51;BitGet;BTCUSDT;;;77630.00;;;;BLOCKED;BLOCKED;Failed: RSI(3) above 70 (reversal setup in downtrend);;;;;
-23.04.2026;11:53:47;BitGet;BTCUSDT;;;77641.16;;;;BLOCKED;BLOCKED;Failed: RSI(3) above 65 (reversal setup in downtrend);;;;;
-23.04.2026;12:22:53;BitGet;ETHUSDT;BUY;0.000430;2327.24;1.00;0.0010;1.00;PAPER-1776946973485;PAPER;All conditions met;;;;;
