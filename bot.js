@@ -147,23 +147,37 @@ async function placeOrder(symbol, signal, lastClose) {
     await setLeverage(symbol);
     const order = await exchange.createMarketOrder(symbol, side, qty, undefined, {
       tradeSide: 'open',
-      takeProfit: { triggerPrice: tp },
-      stopLoss: { triggerPrice: sl },
     });
     if (!order || !order.id) { console.error(`  ❌ Order failed: no id`); return null; }
     console.log(`  ✅ Order placed: ${order.id}`);
 
-    // [FIX PC6] Confirmare TP/SL dupa 2s
-    await sleep(2000);
+    // TP/SL nativ BitGet — apeluri separate dupa deschidere
+    await sleep(1000);
+    const closeSideTP = side === 'buy' ? 'sell' : 'buy';
+    let tpOk = false, slOk = false;
     try {
-      const openOrders = await exchange.fetchOpenOrders(symbol);
-      const hasTp = openOrders.some(o => o.type && o.type.toLowerCase().includes('take_profit'));
-      const hasSl = openOrders.some(o => o.type && o.type.toLowerCase().includes('stop'));
-      console.log(`  TP: ${hasTp ? '✅' : '⚠️ NU gasit'} | SL: ${hasSl ? '✅' : '⚠️ NU gasit'}`);
-      if (!hasTp || !hasSl) {
-        await sendTelegram(`⚠️ <b>BOT1 TP/SL partial</b>\n📊 ${symbol} | ${signal}\nTP:${hasTp?'✅':'❌'} SL:${hasSl?'✅':'❌'}\nVerifica manual!`);
-      }
-    } catch (e) { console.log(`  TP/SL check skip: ${e.message}`); }
+      await exchange.createOrder(symbol, 'limit', closeSideTP, qty, tp, {
+        tradeSide: 'close',
+        reduceOnly: true,
+        stopPrice: tp,
+        triggerType: 'mark_price',
+      });
+      tpOk = true;
+      console.log(`  ✅ TP setat @ ${tp}`);
+    } catch (e) { console.log(`  ⚠️ TP eroare: ${e.message}`); }
+    try {
+      await exchange.createOrder(symbol, 'stop_market', closeSideTP, qty, undefined, {
+        tradeSide: 'close',
+        reduceOnly: true,
+        stopPrice: sl,
+        triggerType: 'mark_price',
+      });
+      slOk = true;
+      console.log(`  ✅ SL setat @ ${sl}`);
+    } catch (e) { console.log(`  ⚠️ SL eroare: ${e.message}`); }
+    if (!tpOk || !slOk) {
+      await sendTelegram(`⚠️ <b>BOT1 TP/SL partial</b>\n📊 ${symbol} | ${signal}\nTP:${tpOk?'✅':'❌'} SL:${slOk?'✅':'❌'}\nVerifica manual!`);
+    }
 
     return { id: order.id, qty };
   } catch (e) {
