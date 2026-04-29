@@ -55,7 +55,7 @@ const CONFIG = {
   rsiPeriod: 14,
   emaFast: 20,
   emaSlow: 50,
-  volumeMultiplier: 1.2,
+  volumeMultiplier: { 'BTC/USDT:USDT': 1.0, 'ETH/USDT:USDT': 1.0, 'SOL/USDT:USDT': 1.2, 'DOGE/USDT:USDT': 1.2 },
   csvFile: path.join(__dirname, 'trades2.csv'),
   github: {
     token: process.env.GITHUB_TOKEN || '',
@@ -131,7 +131,8 @@ function getSignal(candles) {
   const avgVol = calcAvgVol(candles, 20);
   const lastVol = candles[candles.length - 1][5];
   const volRatio = avgVol > 0 ? lastVol / avgVol : 1;
-  const volOk = volRatio >= CONFIG.volumeMultiplier;
+  const volThreshold = CONFIG.volumeMultiplier[symbol] || 1.2;
+  const volOk = volRatio >= volThreshold;
   const lastClose = closes[closes.length - 1];
 
   console.log(`  EMA20=${ema20.toFixed(4)} | EMA50=${ema50.toFixed(4)} | RSI14=${rsi14.toFixed(2)}`);
@@ -362,7 +363,7 @@ async function run() {
       // Verifica conflict directie cu bot1
       const b1pos = posBot1[symbol];
       if (b1pos) {
-        const conflict = (signal === 'BUY' && b1pos.side === 'SHORT') || (signal === 'SELL' && b1pos.side === 'LONG');
+        const conflict = (signal === 'BUY' && b1pos.side === 'LONG') || (signal === 'SELL' && b1pos.side === 'SHORT');
         if (conflict) { console.log(`  ⚠️ SKIP — conflict cu Bot1 (${b1pos.side})`); continue; }
       }
 

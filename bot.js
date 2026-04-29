@@ -335,7 +335,7 @@ async function run() {
       // [FIX PC6] Verifica conflict directie cu bot2
       const b2pos = posBot2[symbol];
       if (b2pos) {
-        const conflict = (signal === 'BUY' && b2pos.side === 'SHORT') || (signal === 'SELL' && b2pos.side === 'LONG');
+        const conflict = (signal === 'BUY' && b2pos.side === 'LONG') || (signal === 'SELL' && b2pos.side === 'SHORT');
         if (conflict) { console.log(`  ⚠️ SKIP — conflict cu Bot2 (${b2pos.side})`); continue; }
       }
 
