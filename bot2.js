@@ -122,7 +122,7 @@ function calcAvgVol(candles, period = 20) {
   return vols.reduce((a, b) => a + b, 0) / period;
 }
 
-function getSignal(candles) {
+function getSignal(candles, symbol) {
   const closes = candles.map(c => c[4]);
   const ema20 = calcEMA(closes, CONFIG.emaFast);
   const ema50 = calcEMA(closes, CONFIG.emaSlow);
@@ -356,7 +356,7 @@ async function run() {
         continue;
       }
 
-      const signalData = getSignal(candles);
+      const signalData = getSignal(candles, symbol);
       const signal = signalData.signal;
       if (signal !== 'BUY' && signal !== 'SELL') { console.log(`  HOLD — no trade.`); continue; }
 
