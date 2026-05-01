@@ -16,9 +16,9 @@ const TP_PCT         = 0.03;
 const SL_PCT         = 0.015;
 const MIN_QTY        = { 'BTC/USDT:USDT': 0.001, 'ETH/USDT:USDT': 0.01, 'SOL/USDT:USDT': 0.1, 'DOGE/USDT:USDT': 1 };
 const VOL_MULTIPLIER = { 'BTC/USDT:USDT': 1.0, 'ETH/USDT:USDT': 1.0, 'SOL/USDT:USDT': 1.2, 'DOGE/USDT:USDT': 1.2 };
-const CSV_FILE       = 'trades2.csv';
-const POSITIONS_FILE = 'positions_bot2.json';
-const OTHER_POSITIONS_FILE = 'positions_bot1.json';
+const CSV_FILE       = 'data/trades2.csv';
+const POSITIONS_FILE = 'data/positions_bot2.json';
+const OTHER_POSITIONS_FILE = 'data/positions_bot1.json';
 const GITHUB_REPO    = 'luchianromeo-art/claude-tradingview-mcp-trading';
 const BOT_NAME       = 'Bot2';
 
