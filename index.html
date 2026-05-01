@@ -3,452 +3,466 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROMEO Trading Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<title>Romeo Trading Bots — Dashboard PC8</title>
 <style>
   :root {
-    --bg: #0a0a0f;
-    --surface: #12121a;
-    --surface2: #1a1a26;
-    --border: #2a2a3a;
-    --green: #00ff88;
-    --green-dim: rgba(0,255,136,0.12);
-    --red: #ff3355;
-    --red-dim: rgba(255,51,85,0.12);
-    --gold: #ffd700;
-    --text: #e8e8f0;
-    --muted: #6a6a8a;
-    --accent: #7b5ea7;
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #e6edf3; --sub: #8b949e;
+    --green: #3fb950; --red: #f85149; --blue: #58a6ff; --yellow: #d29922;
   }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; font-size: 14px; }
+  header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  .badge { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; font-size: 12px; color: var(--sub); }
+  .badge.live { border-color: var(--green); color: var(--green); }
+  #lastUpdate { margin-left: auto; font-size: 12px; color: var(--sub); }
 
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; padding: 20px 24px 0; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .stat label { font-size: 11px; color: var(--sub); text-transform: uppercase; letter-spacing: .5px; }
+  .stat .val { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .stat .val.green { color: var(--green); }
+  .stat .val.red   { color: var(--red); }
+  .stat .val.blue  { color: var(--blue); }
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Space Mono', monospace;
-    min-height: 100vh;
-    padding: 0;
+  .tabs { display: flex; gap: 0; padding: 20px 24px 0; border-bottom: 1px solid var(--border); }
+  .tab { padding: 8px 18px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--sub); font-size: 13px; transition: .2s; }
+  .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .tab:hover  { color: var(--text); }
+
+  .section { padding: 16px 24px; display: none; }
+  .section.active { display: block; }
+
+  .bot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  @media(max-width:700px) { .bot-grid { grid-template-columns: 1fr; } }
+
+  .bot-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .bot-card h3 { font-size: 13px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.blue { background: #58a6ff; } .dot.red { background: var(--red); }
+
+  .mini-stat { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .mini-stat:last-child { border: none; }
+  .mini-stat span:last-child { font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: var(--card); color: var(--sub); font-weight: 500; padding: 8px 10px; text-align: left; border-bottom: 2px solid var(--border); position: sticky; top: 0; }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--border); }
+  tr:hover td { background: rgba(255,255,255,.03); }
+  .pnl-pos { color: var(--green); font-weight: 600; }
+  .pnl-neg { color: var(--red);   font-weight: 600; }
+  .pill { border-radius: 4px; padding: 2px 7px; font-size: 11px; font-weight: 600; }
+  .pill.buy    { background: rgba(63,185,80,.15);  color: var(--green); }
+  .pill.sell   { background: rgba(248,81,73,.15);  color: var(--red);   }
+  .pill.tp     { background: rgba(63,185,80,.2);   color: var(--green); }
+  .pill.sl     { background: rgba(248,81,73,.2);   color: var(--red);   }
+  .pill.trail  { background: rgba(210,153,34,.2);  color: var(--yellow);}
+  .pill.hold   { background: rgba(88,166,255,.15); color: var(--blue);  }
+
+  .chart-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .chart-wrap h4 { font-size: 12px; color: var(--sub); margin-bottom: 12px; }
+  canvas { width: 100%; }
+
+  .tbl-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: auto; max-height: 480px; }
+  .filter-bar { display: flex; gap: 8px; padding: 0 0 12px; flex-wrap: wrap; }
+  .filter-bar select, .filter-bar input {
+    background: var(--card); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 10px; font-size: 13px;
   }
-
-  /* HEADER */
-  .header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 20px 32px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    backdrop-filter: blur(10px);
-  }
-
-  .logo {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 20px;
-    letter-spacing: 2px;
-    color: var(--gold);
-    text-transform: uppercase;
-  }
-
-  .logo span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 12px; letter-spacing: 1px; }
-
-  .refresh-btn {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 8px 18px;
-    font-family: 'Space Mono', monospace;
-    font-size: 12px;
-    cursor: pointer;
-    letter-spacing: 1px;
-    transition: all 0.2s;
-    border-radius: 4px;
-  }
-  .refresh-btn:hover { border-color: var(--gold); color: var(--gold); }
-
-  .last-update {
-    font-size: 11px;
-    color: var(--muted);
-    letter-spacing: 1px;
-  }
-
-  /* STATS BAR */
-  .stats-bar {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 1px;
-    background: var(--border);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .stat {
-    background: var(--surface);
-    padding: 20px 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .stat-label {
-    font-size: 10px;
-    color: var(--muted);
-    letter-spacing: 2px;
-    text-transform: uppercase;
-  }
-
-  .stat-value {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 24px;
-  }
-
-  .stat-value.green { color: var(--green); }
-  .stat-value.red { color: var(--red); }
-  .stat-value.gold { color: var(--gold); }
-  .stat-value.white { color: var(--text); }
-
-  /* MAIN */
-  .main {
-    padding: 32px;
-    display: flex;
-    flex-direction: column;
-    gap: 32px;
-    max-width: 1400px;
-    margin: 0 auto;
-  }
-
-  /* SECTION */
-  .section-title {
-    font-family: 'Syne', sans-serif;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .section-title::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
-
-  .section-title .badge {
-    background: var(--accent);
-    color: white;
-    font-size: 10px;
-    padding: 2px 8px;
-    border-radius: 20px;
-  }
-
-  /* TABLE */
-  .table-wrap {
-    overflow-x: auto;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-
-  thead th {
-    background: var(--surface2);
-    padding: 12px 16px;
-    text-align: left;
-    font-size: 10px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--muted);
-    white-space: nowrap;
-    border-bottom: 1px solid var(--border);
-    font-family: 'Syne', sans-serif;
-    font-weight: 600;
-  }
-
-  tbody tr {
-    border-bottom: 1px solid var(--border);
-    transition: background 0.15s;
-  }
-
-  tbody tr:last-child { border-bottom: none; }
-  tbody tr:hover { background: var(--surface2); }
-
-  tbody td {
-    padding: 12px 16px;
-    white-space: nowrap;
-    vertical-align: middle;
-  }
-
-  /* STATUS BADGES */
-  .badge-open {
-    background: rgba(123,94,167,0.2);
-    color: #b39ddb;
-    border: 1px solid rgba(123,94,167,0.4);
-    padding: 3px 10px;
-    border-radius: 4px;
-    font-size: 11px;
-    letter-spacing: 1px;
-  }
-
-  .badge-tp {
-    background: var(--green-dim);
-    color: var(--green);
-    border: 1px solid rgba(0,255,136,0.3);
-    padding: 3px 10px;
-    border-radius: 4px;
-    font-size: 11px;
-    letter-spacing: 1px;
-  }
-
-  .badge-sl {
-    background: var(--red-dim);
-    color: var(--red);
-    border: 1px solid rgba(255,51,85,0.3);
-    padding: 3px 10px;
-    border-radius: 4px;
-    font-size: 11px;
-    letter-spacing: 1px;
-  }
-
-  .signal-buy { color: var(--green); font-weight: 700; }
-  .signal-sell { color: var(--red); font-weight: 700; }
-
-  .pnl-pos { color: var(--green); font-weight: 700; }
-  .pnl-neg { color: var(--red); font-weight: 700; }
-  .pnl-zero { color: var(--muted); }
-
-  .symbol {
-    font-family: 'Syne', sans-serif;
-    font-weight: 700;
-    font-size: 13px;
-    color: var(--gold);
-  }
-
-  /* LOADING */
-  .loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 60px;
-    color: var(--muted);
-    font-size: 13px;
-    letter-spacing: 2px;
-    gap: 12px;
-  }
-
-  .spinner {
-    width: 20px; height: 20px;
-    border: 2px solid var(--border);
-    border-top-color: var(--gold);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .error-msg {
-    padding: 20px;
-    color: var(--red);
-    font-size: 12px;
-    letter-spacing: 1px;
-    text-align: center;
-  }
-
-  /* MOBILE */
-  @media (max-width: 600px) {
-    .header { padding: 16px; }
-    .main { padding: 16px; gap: 24px; }
-    .stats-bar { grid-template-columns: repeat(2, 1fr); }
-    .stat { padding: 14px 16px; }
-    .stat-value { font-size: 20px; }
-  }
+  #loading { text-align: center; padding: 40px; color: var(--sub); }
+  .sparkline { display: inline-block; vertical-align: middle; }
 </style>
 </head>
 <body>
 
-<div class="header">
-  <div>
-    <div class="logo">ROMEO <span>TRADING BOTS</span></div>
-  </div>
-  <div style="display:flex;align-items:center;gap:16px;">
-    <div class="last-update" id="lastUpdate">—</div>
-    <button class="refresh-btn" onclick="loadAll()">↻ REFRESH</button>
-  </div>
-</div>
+<header>
+  <span>📊</span>
+  <h1>Romeo Trading Bots</h1>
+  <span class="badge">PC8</span>
+  <span class="badge live" id="liveStatus">● LIVE</span>
+  <span id="lastUpdate">Se încarcă...</span>
+</header>
 
-<div class="stats-bar" id="statsBar">
-  <div class="stat"><div class="stat-label">Total Trades</div><div class="stat-value white" id="statTotal">—</div></div>
-  <div class="stat"><div class="stat-label">Win Rate</div><div class="stat-value gold" id="statWin">—</div></div>
-  <div class="stat"><div class="stat-label">Total PnL $</div><div class="stat-value" id="statPnlUsd">—</div></div>
-  <div class="stat"><div class="stat-label">TP Hit</div><div class="stat-value green" id="statTp">—</div></div>
-  <div class="stat"><div class="stat-label">SL Hit</div><div class="stat-value red" id="statSl">—</div></div>
-  <div class="stat"><div class="stat-label">Open</div><div class="stat-value" style="color:#b39ddb" id="statOpen">—</div></div>
-</div>
+<div id="loading">⏳ Se încarcă datele din GitHub...</div>
+<div id="app" style="display:none">
 
-<div class="main">
-  <div>
-    <div class="section-title">Bot 1 — VWAP + EMA8 + RSI3 <span class="badge">TP +2% / SL -1%</span></div>
-    <div id="bot1Table"><div class="loading"><div class="spinner"></div>LOADING...</div></div>
+  <!-- STATS GLOBALE -->
+  <div class="grid" id="globalStats"></div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('overview')">Overview</div>
+    <div class="tab" onclick="showTab('bot1')">🔵 Bot1 (VWAP+EMA8+RSI3)</div>
+    <div class="tab" onclick="showTab('bot2')">🔴 Bot2 (EMA+BB+RSI14)</div>
+    <div class="tab" onclick="showTab('compare')">⚖️ Comparație</div>
   </div>
-  <div>
-    <div class="section-title">Bot 2 — EMA20 + EMA50 + BB + RSI14 <span class="badge">TP +3% / SL -1.5%</span></div>
-    <div id="bot2Table"><div class="loading"><div class="spinner"></div>LOADING...</div></div>
+
+  <!-- OVERVIEW -->
+  <div class="section active" id="tab-overview">
+    <div class="bot-grid" id="botCards"></div>
+    <div class="chart-wrap">
+      <h4>PnL Cumulativ — ambii boti (USD)</h4>
+      <canvas id="chartCumulative" height="60"></canvas>
+    </div>
   </div>
+
+  <!-- BOT1 -->
+  <div class="section" id="tab-bot1">
+    <div class="chart-wrap">
+      <h4>🔵 Bot1 — PnL per trade ($)</h4>
+      <canvas id="chartBot1" height="60"></canvas>
+    </div>
+    <div class="filter-bar">
+      <select id="b1sym" onchange="renderTable('bot1')"><option value="">Toate simbolurile</option></select>
+      <select id="b1sig" onchange="renderTable('bot1')"><option value="">Toate semnalele</option><option>BUY</option><option>SELL</option></select>
+      <select id="b1res" onchange="renderTable('bot1')"><option value="">Toate rezultatele</option><option>TP_HIT</option><option>SL_HIT</option><option>TRAIL_STOP</option></select>
+    </div>
+    <div class="tbl-wrap"><table id="tblBot1"><thead><tr>
+      <th>Data intrare</th><th>Symbol</th><th>Semnal</th><th>Pret intrare</th>
+      <th>TP</th><th>SL</th><th>Rezultat</th><th>Data iesire</th><th>PnL $</th><th>PnL %</th>
+    </tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <!-- BOT2 -->
+  <div class="section" id="tab-bot2">
+    <div class="chart-wrap">
+      <h4>🔴 Bot2 — PnL per trade ($)</h4>
+      <canvas id="chartBot2" height="60"></canvas>
+    </div>
+    <div class="filter-bar">
+      <select id="b2sym" onchange="renderTable('bot2')"><option value="">Toate simbolurile</option></select>
+      <select id="b2sig" onchange="renderTable('bot2')"><option value="">Toate semnalele</option><option>BUY</option><option>SELL</option></select>
+      <select id="b2res" onchange="renderTable('bot2')"><option value="">Toate rezultatele</option><option>TP_HIT</option><option>SL_HIT</option><option>TRAIL_STOP</option></select>
+    </div>
+    <div class="tbl-wrap"><table id="tblBot2"><thead><tr>
+      <th>Data</th><th>Symbol</th><th>Semnal</th><th>Pret</th>
+      <th>TP</th><th>SL</th><th>EMA20</th><th>EMA50</th><th>RSI14</th>
+      <th>BBW</th><th>VolR</th><th>Rezultat</th><th>PnL $</th><th>PnL %</th>
+    </tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <!-- COMPARE -->
+  <div class="section" id="tab-compare">
+    <div class="chart-wrap">
+      <h4>📊 Comparație PnL Cumulativ — Bot1 vs Bot2</h4>
+      <canvas id="chartCompare" height="70"></canvas>
+    </div>
+    <div class="bot-grid" id="compareCards"></div>
+  </div>
+
 </div>
 
 <script>
-const REPO = 'luchianromeo-art/claude-tradingview-mcp-trading';
-const RAW  = `https://raw.githubusercontent.com/${REPO}/main/`;
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const REPO  = 'luchianromeo-art/claude-tradingview-mcp-trading';
+const CSV1  = `https://raw.githubusercontent.com/${REPO}/main/data/trades.csv`;
+const CSV2  = `https://raw.githubusercontent.com/${REPO}/main/data/trades2.csv`;
 
-async function fetchCSV(file) {
-  const r = await fetch(RAW + file + '?t=' + Date.now());
-  if (!r.ok) throw new Error('Cannot fetch ' + file);
-  return r.text();
-}
+let data1 = [], data2 = [];
 
-function parseCSV(text) {
-  const lines = text.trim().split('\n').filter(l => l.trim());
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.trim());
-  return lines.slice(1).map(line => {
-    const vals = line.split(',').map(v => v.trim());
-    const obj = {};
-    headers.forEach((h, i) => obj[h] = vals[i] || '');
-    return obj;
-  });
-}
-
-function pnlClass(val) {
-  if (!val || val === '0.00' || val === '0.00%' || val === '0.00$') return 'pnl-zero';
-  const n = parseFloat(val.replace(/[$%]/g, ''));
-  if (n > 0) return 'pnl-pos';
-  if (n < 0) return 'pnl-neg';
-  return 'pnl-zero';
-}
-
-function resultBadge(r) {
-  if (!r || r === 'OPEN') return '<span class="badge-open">OPEN</span>';
-  if (r === 'TP_HIT') return '<span class="badge-tp">TP HIT</span>';
-  if (r === 'SL_HIT') return '<span class="badge-sl">SL HIT</span>';
-  return r;
-}
-
-function signalClass(s) {
-  if (s === 'BUY' || s === 'TP_HIT') return 'signal-buy';
-  if (s === 'SELL' || s === 'SL_HIT') return 'signal-sell';
-  return '';
-}
-
-function renderTable(rows, isBot2) {
-  if (!rows.length) return '<div class="error-msg">Nu există date.</div>';
-
-  const extraCols = isBot2 ? `
-    <th>EMA20</th><th>EMA50</th><th>RSI14</th><th>BB Upper</th><th>BB Lower</th><th>Vol Ratio</th>
-  ` : '';
-
-  const header = `
-    <thead><tr>
-      <th>Data intrare</th><th>Symbol</th><th>Semnal</th>
-      <th>Pret intrare</th><th>TP</th><th>SL</th><th>Size</th>
-      ${extraCols}
-      <th>Rezultat</th><th>Data iesire</th><th>PnL $</th><th>PnL %</th>
-    </tr></thead>
-  `;
-
-  const bodyRows = rows.map(r => {
-    const extraCells = isBot2 ? `
-      <td>${r['EMA20']||'—'}</td>
-      <td>${r['EMA50']||'—'}</td>
-      <td>${r['RSI14']||'—'}</td>
-      <td>${r['BB_Upper']||'—'}</td>
-      <td>${r['BB_Lower']||'—'}</td>
-      <td>${r['Vol_Ratio']||'—'}</td>
-    ` : '';
-
-    const pnlUsd = r['PnL $'] || r['PnL $'] || '';
-    const pnlPct = r['PnL %'] || '';
-    const rezultat = r['Rezultat'] || '';
-
-    return `<tr>
-      <td style="color:var(--muted);font-size:12px">${r['Data intrare']||''}</td>
-      <td><span class="symbol">${r['Symbol']||''}</span></td>
-      <td><span class="${signalClass(r['Semnal'])}">${r['Semnal']||''}</span></td>
-      <td>${r['Pret intrare']||''}</td>
-      <td style="color:var(--green);opacity:0.8">${r['TP']||''}</td>
-      <td style="color:var(--red);opacity:0.8">${r['SL']||''}</td>
-      <td style="color:var(--muted)">${r['Size']||''}</td>
-      ${extraCells}
-      <td>${resultBadge(rezultat)}</td>
-      <td style="color:var(--muted);font-size:12px">${r['Data iesire']||'—'}</td>
-      <td class="${pnlClass(pnlUsd)}">${pnlUsd||'—'}</td>
-      <td class="${pnlClass(pnlPct)}">${pnlPct||'—'}</td>
-    </tr>`;
-  }).join('');
-
-  return `<div class="table-wrap"><table>${header}<tbody>${bodyRows}</tbody></table></div>`;
-}
-
-function updateStats(rows1, rows2) {
-  const all = [...rows1, ...rows2];
-  const closed = all.filter(r => r['Rezultat'] && r['Rezultat'] !== 'OPEN');
-  const tp = closed.filter(r => r['Rezultat'] === 'TP_HIT').length;
-  const sl = closed.filter(r => r['Rezultat'] === 'SL_HIT').length;
-  const open = all.filter(r => !r['Rezultat'] || r['Rezultat'] === 'OPEN').length;
-  const winRate = closed.length > 0 ? ((tp / closed.length) * 100).toFixed(1) : '0.0';
-
-  let totalPnl = 0;
-  all.forEach(r => {
-    const v = parseFloat((r['PnL $']||'0').replace('$',''));
-    if (!isNaN(v)) totalPnl += v;
-  });
-
-  document.getElementById('statTotal').textContent = all.length;
-  document.getElementById('statWin').textContent = winRate + '%';
-  document.getElementById('statTp').textContent = tp;
-  document.getElementById('statSl').textContent = sl;
-  document.getElementById('statOpen').textContent = open;
-
-  const pnlEl = document.getElementById('statPnlUsd');
-  pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + totalPnl.toFixed(2) + '$';
-  pnlEl.className = 'stat-value ' + (totalPnl > 0 ? 'green' : totalPnl < 0 ? 'red' : 'white');
-}
-
-async function loadAll() {
-  document.getElementById('bot1Table').innerHTML = '<div class="loading"><div class="spinner"></div>LOADING...</div>';
-  document.getElementById('bot2Table').innerHTML = '<div class="loading"><div class="spinner"></div>LOADING...</div>';
-
+// ─── FETCH CSV ───────────────────────────────────────────────────────────────
+async function fetchCSV(url) {
   try {
-    const [csv1, csv2] = await Promise.all([fetchCSV('trades.csv'), fetchCSV('trades2.csv')]);
-    const rows1 = parseCSV(csv1);
-    const rows2 = parseCSV(csv2);
+    const r = await fetch(url + '?_=' + Date.now());
+    if (!r.ok) return [];
+    const txt = await r.text();
+    const lines = txt.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim());
+    return lines.slice(1).map(line => {
+      const vals = line.split(',');
+      const obj  = {};
+      headers.forEach((h, i) => obj[h] = (vals[i] || '').trim());
+      return obj;
+    }).filter(r => r['Data intrare'] || r['Data']);
+  } catch { return []; }
+}
 
-    document.getElementById('bot1Table').innerHTML = renderTable(rows1, false);
-    document.getElementById('bot2Table').innerHTML = renderTable(rows2, true);
-    updateStats(rows1, rows2);
+function parsePnl(str) {
+  if (!str) return 0;
+  return parseFloat(str.replace('$','').replace('%','')) || 0;
+}
 
-    const now = new Date();
-    document.getElementById('lastUpdate').textContent =
-      'ACTUALIZAT ' + now.toLocaleTimeString('ro-RO', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  } catch (e) {
-    document.getElementById('bot1Table').innerHTML = `<div class="error-msg">Eroare: ${e.message}</div>`;
-    document.getElementById('bot2Table').innerHTML = `<div class="error-msg">Eroare: ${e.message}</div>`;
+// ─── STATS ────────────────────────────────────────────────────────────────────
+function calcStats(rows, col = 'PnL $') {
+  const closed = rows.filter(r => r['Rezultat'] && r['Rezultat'] !== '');
+  const pnls   = closed.map(r => parsePnl(r[col]));
+  const total  = pnls.reduce((a, b) => a + b, 0);
+  const wins   = pnls.filter(p => p > 0).length;
+  const winrate = closed.length > 0 ? (wins / closed.length * 100) : 0;
+  const best   = pnls.length > 0 ? Math.max(...pnls) : 0;
+  const worst  = pnls.length > 0 ? Math.min(...pnls) : 0;
+  return { total, wins, losses: closed.length - wins, trades: closed.length, winrate, best, worst };
+}
+
+// ─── RENDER STATS GLOBALE ────────────────────────────────────────────────────
+function renderGlobalStats() {
+  const s1 = calcStats(data1);
+  const s2 = calcStats(data2);
+  const totalPnl = s1.total + s2.total;
+  const totalTrades = s1.trades + s2.trades;
+  const totalWins   = s1.wins  + s2.wins;
+  const wr = totalTrades > 0 ? (totalWins / totalTrades * 100) : 0;
+
+  document.getElementById('globalStats').innerHTML = `
+    <div class="stat"><label>PnL Total</label>
+      <div class="val ${totalPnl>=0?'green':'red'}">${totalPnl.toFixed(2)}$</div></div>
+    <div class="stat"><label>Tranzacții</label>
+      <div class="val blue">${totalTrades}</div></div>
+    <div class="stat"><label>Winrate Global</label>
+      <div class="val ${wr>=50?'green':'red'}">${wr.toFixed(1)}%</div></div>
+    <div class="stat"><label>Bot1 PnL</label>
+      <div class="val ${s1.total>=0?'green':'red'}">${s1.total.toFixed(2)}$</div></div>
+    <div class="stat"><label>Bot2 PnL</label>
+      <div class="val ${s2.total>=0?'green':'red'}">${s2.total.toFixed(2)}$</div></div>
+    <div class="stat"><label>Bot1 Winrate</label>
+      <div class="val ${s1.winrate>=50?'green':'red'}">${s1.winrate.toFixed(1)}%</div></div>
+    <div class="stat"><label>Bot2 Winrate</label>
+      <div class="val ${s2.winrate>=50?'green':'red'}">${s2.winrate.toFixed(1)}%</div></div>
+  `;
+}
+
+// ─── BOT CARDS ───────────────────────────────────────────────────────────────
+function renderBotCards() {
+  const s1 = calcStats(data1), s2 = calcStats(data2);
+  document.getElementById('botCards').innerHTML = `
+    <div class="bot-card">
+      <h3><span class="dot blue"></span>🔵 Bot1 — VWAP+EMA8+RSI3</h3>
+      ${miniStats(s1)}
+    </div>
+    <div class="bot-card">
+      <h3><span class="dot red"></span>🔴 Bot2 — EMA+BB+RSI14</h3>
+      ${miniStats(s2)}
+    </div>`;
+}
+
+function miniStats(s) {
+  return `
+    <div class="mini-stat"><span>Tranzacții</span><span>${s.trades}</span></div>
+    <div class="mini-stat"><span>Câștigate</span><span style="color:var(--green)">${s.wins}</span></div>
+    <div class="mini-stat"><span>Pierdute</span><span style="color:var(--red)">${s.losses}</span></div>
+    <div class="mini-stat"><span>Winrate</span><span class="${s.winrate>=50?'pnl-pos':'pnl-neg'}">${s.winrate.toFixed(1)}%</span></div>
+    <div class="mini-stat"><span>PnL Total</span><span class="${s.total>=0?'pnl-pos':'pnl-neg'}">${s.total.toFixed(2)}$</span></div>
+    <div class="mini-stat"><span>Best trade</span><span class="pnl-pos">${s.best.toFixed(2)}$</span></div>
+    <div class="mini-stat"><span>Worst trade</span><span class="pnl-neg">${s.worst.toFixed(2)}$</span></div>`;
+}
+
+// ─── CHARTS (vanilla canvas) ──────────────────────────────────────────────────
+function drawBarChart(canvasId, labels, values, color1 = '#58a6ff', color2 = null) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || values.length === 0) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.parentElement.clientWidth - 32;
+  const H = 120;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+
+  const max = Math.max(...values.map(Math.abs), 0.01);
+  const barW = Math.max(2, Math.floor((W - 20) / values.length) - 1);
+  const midY = H / 2;
+
+  values.forEach((v, i) => {
+    const x = 10 + i * (barW + 1);
+    const h = Math.abs(v) / max * (H / 2 - 4);
+    ctx.fillStyle = v >= 0 ? '#3fb950' : '#f85149';
+    if (v >= 0) ctx.fillRect(x, midY - h, barW, h);
+    else        ctx.fillRect(x, midY, barW, h);
+  });
+
+  // Zero line
+  ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(10, midY); ctx.lineTo(W - 10, midY); ctx.stroke();
+}
+
+function drawLineChart(canvasId, series) {
+  // series = [{label, data: [nums], color}]
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const maxLen = Math.max(...series.map(s => s.data.length), 1);
+  if (maxLen === 0) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.parentElement.clientWidth - 32;
+  const H = 130;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+
+  const allVals = series.flatMap(s => s.data);
+  const minV = Math.min(...allVals, 0);
+  const maxV = Math.max(...allVals, 0.01);
+  const range = maxV - minV || 1;
+
+  series.forEach(({ data, color }) => {
+    if (data.length < 2) return;
+    ctx.beginPath();
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    data.forEach((v, i) => {
+      const x = 10 + (i / (data.length - 1)) * (W - 20);
+      const y = H - 10 - ((v - minV) / range) * (H - 20);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+
+  // Zero line
+  if (minV <= 0 && maxV >= 0) {
+    const zeroY = H - 10 - ((0 - minV) / range) * (H - 20);
+    ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(10, zeroY); ctx.lineTo(W - 10, zeroY); ctx.stroke();
   }
 }
 
-loadAll();
-setInterval(loadAll, 60000); // auto-refresh la 60 secunde
+function cumulative(rows) {
+  const pnls = rows.filter(r => r['Rezultat']).map(r => parsePnl(r['PnL $']));
+  const cum  = [];
+  let sum    = 0;
+  pnls.forEach(p => { sum += p; cum.push(sum); });
+  return cum;
+}
+
+function renderCharts() {
+  const pnls1 = data1.filter(r=>r['Rezultat']).map(r=>parsePnl(r['PnL $']));
+  const pnls2 = data2.filter(r=>r['Rezultat']).map(r=>parsePnl(r['PnL $']));
+  drawBarChart('chartBot1', [], pnls1);
+  drawBarChart('chartBot2', [], pnls2);
+
+  const cum1 = cumulative(data1);
+  const cum2 = cumulative(data2);
+  const combined = cum1.map((v, i) => v + (cum2[i] || 0));
+  drawLineChart('chartCumulative', [{ data: combined, color: '#58a6ff' }]);
+  drawLineChart('chartCompare', [
+    { data: cum1, color: '#58a6ff' },
+    { data: cum2, color: '#f85149' }
+  ]);
+}
+
+// ─── TABELE ───────────────────────────────────────────────────────────────────
+function pillResult(r) {
+  if (!r) return '';
+  const cls = r === 'TP_HIT' ? 'tp' : r === 'SL_HIT' ? 'sl' : r === 'TRAIL_STOP' ? 'trail' : 'hold';
+  return `<span class="pill ${cls}">${r}</span>`;
+}
+
+function pillSide(s) {
+  return `<span class="pill ${s==='BUY'?'buy':'sell'}">${s}</span>`;
+}
+
+function pnlClass(str) {
+  const v = parsePnl(str);
+  return v >= 0 ? 'pnl-pos' : 'pnl-neg';
+}
+
+function populateSymFilter(selId, rows, keyField) {
+  const sel = document.getElementById(selId);
+  const syms = [...new Set(rows.map(r => r[keyField] || r['Symbol']).filter(Boolean))];
+  sel.innerHTML = '<option value="">Toate simbolurile</option>' +
+    syms.map(s => `<option>${s}</option>`).join('');
+}
+
+function renderTable(bot) {
+  const isB1 = bot === 'bot1';
+  const rows = isB1 ? data1 : data2;
+  const sym  = document.getElementById(isB1?'b1sym':'b2sym').value;
+  const sig  = document.getElementById(isB1?'b1sig':'b2sig').value;
+  const res  = document.getElementById(isB1?'b1res':'b2res').value;
+
+  const filtered = rows.filter(r => {
+    if (sym && (r['Symbol']||'') !== sym) return false;
+    if (sig && (r['Semnal']||'') !== sig) return false;
+    if (res && (r['Rezultat']||'') !== res) return false;
+    return true;
+  });
+
+  const tbody = document.querySelector(`#tbl${isB1?'Bot1':'Bot2'} tbody`);
+  if (isB1) {
+    tbody.innerHTML = filtered.map(r => `<tr>
+      <td>${r['Data intrare']||''}</td>
+      <td>${r['Symbol']||''}</td>
+      <td>${pillSide(r['Semnal']||'')}</td>
+      <td>${r['Pret intrare']||''}</td>
+      <td>${r['TP']||''}</td>
+      <td>${r['SL']||''}</td>
+      <td>${pillResult(r['Rezultat'])}</td>
+      <td>${r['Data iesire']||''}</td>
+      <td class="${pnlClass(r['PnL $'])}">${r['PnL $']||''}</td>
+      <td class="${pnlClass(r['PnL %'])}">${r['PnL %']||''}</td>
+    </tr>`).join('');
+  } else {
+    tbody.innerHTML = filtered.map(r => `<tr>
+      <td>${r['Data intrare']||''}</td>
+      <td>${r['Symbol']||''}</td>
+      <td>${pillSide(r['Semnal']||'')}</td>
+      <td>${r['Pret intrare']||''}</td>
+      <td>${r['TP']||''}</td>
+      <td>${r['SL']||''}</td>
+      <td>${r['EMA20']||''}</td>
+      <td>${r['EMA50']||''}</td>
+      <td>${r['RSI14']||''}</td>
+      <td>${r['BB_Width']||''}</td>
+      <td>${r['Vol_Ratio']||''}</td>
+      <td>${pillResult(r['Rezultat'])}</td>
+      <td class="${pnlClass(r['PnL $'])}">${r['PnL $']||''}</td>
+      <td class="${pnlClass(r['PnL %'])}">${r['PnL %']||''}</td>
+    </tr>`).join('');
+  }
+}
+
+// ─── COMPARE CARDS ────────────────────────────────────────────────────────────
+function renderCompareCards() {
+  const s1 = calcStats(data1), s2 = calcStats(data2);
+  const winner = s1.winrate >= s2.winrate ? '🔵 Bot1' : '🔴 Bot2';
+  document.getElementById('compareCards').innerHTML = `
+    <div class="bot-card">
+      <h3>🔵 Bot1 vs 🔴 Bot2 — Winrate</h3>
+      <div class="mini-stat"><span>Bot1 Winrate</span><span class="${s1.winrate>=50?'pnl-pos':'pnl-neg'}">${s1.winrate.toFixed(1)}%</span></div>
+      <div class="mini-stat"><span>Bot2 Winrate</span><span class="${s2.winrate>=50?'pnl-pos':'pnl-neg'}">${s2.winrate.toFixed(1)}%</span></div>
+      <div class="mini-stat"><span>Câștigător</span><span style="color:var(--yellow)">${winner}</span></div>
+    </div>
+    <div class="bot-card">
+      <h3>💰 PnL Comparat</h3>
+      <div class="mini-stat"><span>Bot1 Total</span><span class="${s1.total>=0?'pnl-pos':'pnl-neg'}">${s1.total.toFixed(2)}$</span></div>
+      <div class="mini-stat"><span>Bot2 Total</span><span class="${s2.total>=0?'pnl-pos':'pnl-neg'}">${s2.total.toFixed(2)}$</span></div>
+      <div class="mini-stat"><span>Combined</span><span class="${(s1.total+s2.total)>=0?'pnl-pos':'pnl-neg'}">${(s1.total+s2.total).toFixed(2)}$</span></div>
+    </div>`;
+}
+
+// ─── TABS ─────────────────────────────────────────────────────────────────────
+function showTab(id) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    const ids = ['overview','bot1','bot2','compare'];
+    t.classList.toggle('active', ids[i] === id);
+  });
+  document.querySelectorAll('.section').forEach(s => {
+    s.classList.toggle('active', s.id === 'tab-' + id);
+  });
+  setTimeout(renderCharts, 50);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+async function init() {
+  [data1, data2] = await Promise.all([fetchCSV(CSV1), fetchCSV(CSV2)]);
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  populateSymFilter('b1sym', data1, 'Symbol');
+  populateSymFilter('b2sym', data2, 'Symbol');
+
+  renderGlobalStats();
+  renderBotCards();
+  renderTable('bot1');
+  renderTable('bot2');
+  renderCompareCards();
+  setTimeout(renderCharts, 100);
+
+  document.getElementById('lastUpdate').textContent = 'Actualizat: ' + new Date().toLocaleTimeString('ro-RO');
+}
+
+init();
+// Auto-refresh la 5 minute
+setInterval(init, 5 * 60 * 1000);
+window.renderTable = renderTable;
+window.showTab = showTab;
 </script>
 </body>
 </html>
