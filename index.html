@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROMEO Trading Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3a;
+    --green: #00ff88;
+    --green-dim: rgba(0,255,136,0.12);
+    --red: #ff3355;
+    --red-dim: rgba(255,51,85,0.12);
+    --gold: #ffd700;
+    --text: #e8e8f0;
+    --muted: #6a6a8a;
+    --accent: #7b5ea7;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* HEADER */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(10px);
+  }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 20px;
+    letter-spacing: 2px;
+    color: var(--gold);
+    text-transform: uppercase;
+  }
+
+  .logo span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 12px; letter-spacing: 1px; }
+
+  .refresh-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 18px;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+    border-radius: 4px;
+  }
+  .refresh-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+  .last-update {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  /* STATS BAR */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    background: var(--surface);
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .stat-value {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 24px;
+  }
+
+  .stat-value.green { color: var(--green); }
+  .stat-value.red { color: var(--red); }
+  .stat-value.gold { color: var(--gold); }
+  .stat-value.white { color: var(--text); }
+
+  /* MAIN */
+  .main {
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* SECTION */
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .section-title .badge {
+    background: var(--accent);
+    color: white;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 20px;
+  }
+
+  /* TABLE */
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead th {
+    background: var(--surface2);
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+    font-family: 'Syne', sans-serif;
+    font-weight: 600;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--surface2); }
+
+  tbody td {
+    padding: 12px 16px;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  /* STATUS BADGES */
+  .badge-open {
+    background: rgba(123,94,167,0.2);
+    color: #b39ddb;
+    border: 1px solid rgba(123,94,167,0.4);
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  .badge-tp {
+    background: var(--green-dim);
+    color: var(--green);
+    border: 1px solid rgba(0,255,136,0.3);
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  .badge-sl {
+    background: var(--red-dim);
+    color: var(--red);
+    border: 1px solid rgba(255,51,85,0.3);
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  .signal-buy { color: var(--green); font-weight: 700; }
+  .signal-sell { color: var(--red); font-weight: 700; }
+
+  .pnl-pos { color: var(--green); font-weight: 700; }
+  .pnl-neg { color: var(--red); font-weight: 700; }
+  .pnl-zero { color: var(--muted); }
+
+  .symbol {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--gold);
+  }
+
+  /* LOADING */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px;
+    color: var(--muted);
+    font-size: 13px;
+    letter-spacing: 2px;
+    gap: 12px;
+  }
+
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-msg {
+    padding: 20px;
+    color: var(--red);
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-align: center;
+  }
+
+  /* MOBILE */
+  @media (max-width: 600px) {
+    .header { padding: 16px; }
+    .main { padding: 16px; gap: 24px; }
+    .stats-bar { grid-template-columns: repeat(2, 1fr); }
+    .stat { padding: 14px 16px; }
+    .stat-value { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="logo">ROMEO <span>TRADING BOTS</span></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <div class="last-update" id="lastUpdate">—</div>
+    <button class="refresh-btn" onclick="loadAll()">↻ REFRESH</button>
+  </div>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat"><div class="stat-label">Total Trades</div><div class="stat-value white" id="statTotal">—</div></div>
+  <div class="stat"><div class="stat-label">Win Rate</div><div class="stat-value gold" id="statWin">—</div></div>
+  <div class="stat"><div class="stat-label">Total PnL $</div><div class="stat-value" id="statPnlUsd">—</div></div>
+  <div class="stat"><div class="stat-label">TP Hit</div><div class="stat-value green" id="statTp">—</div></div>
+  <div class="stat"><div class="stat-label">SL Hit</div><div class="stat-value red" id="statSl">—</div></div>
+  <div class="stat"><div class="stat-label">Open</div><div class="stat-value" style="color:#b39ddb" id="statOpen">—</div></div>
+</div>
+
+<div class="main">
+  <div>
+    <div class="section-title">Bot 1 — VWAP + EMA8 + RSI3 <span class="badge">TP +2% / SL -1%</span></div>
+    <div id="bot1Table"><div class="loading"><div class="spinner"></div>LOADING...</div></div>
+  </div>
+  <div>
+    <div class="section-title">Bot 2 — EMA20 + EMA50 + BB + RSI14 <span class="badge">TP +3% / SL -1.5%</span></div>
+    <div id="bot2Table"><div class="loading"><div class="spinner"></div>LOADING...</div></div>
+  </div>
+</div>
+
+<script>
+const REPO = 'luchianromeo-art/claude-tradingview-mcp-trading';
+const RAW  = `https://raw.githubusercontent.com/${REPO}/main/`;
+
+async function fetchCSV(file) {
+  const r = await fetch(RAW + file + '?t=' + Date.now());
+  if (!r.ok) throw new Error('Cannot fetch ' + file);
+  return r.text();
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const vals = line.split(',').map(v => v.trim());
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = vals[i] || '');
+    return obj;
+  });
+}
+
+function pnlClass(val) {
+  if (!val || val === '0.00' || val === '0.00%' || val === '0.00$') return 'pnl-zero';
+  const n = parseFloat(val.replace(/[$%]/g, ''));
+  if (n > 0) return 'pnl-pos';
+  if (n < 0) return 'pnl-neg';
+  return 'pnl-zero';
+}
+
+function resultBadge(r) {
+  if (!r || r === 'OPEN') return '<span class="badge-open">OPEN</span>';
+  if (r === 'TP_HIT') return '<span class="badge-tp">TP HIT</span>';
+  if (r === 'SL_HIT') return '<span class="badge-sl">SL HIT</span>';
+  return r;
+}
+
+function signalClass(s) {
+  if (s === 'BUY' || s === 'TP_HIT') return 'signal-buy';
+  if (s === 'SELL' || s === 'SL_HIT') return 'signal-sell';
+  return '';
+}
+
+function renderTable(rows, isBot2) {
+  if (!rows.length) return '<div class="error-msg">Nu există date.</div>';
+
+  const extraCols = isBot2 ? `
+    <th>EMA20</th><th>EMA50</th><th>RSI14</th><th>BB Upper</th><th>BB Lower</th><th>Vol Ratio</th>
+  ` : '';
+
+  const header = `
+    <thead><tr>
+      <th>Data intrare</th><th>Symbol</th><th>Semnal</th>
+      <th>Pret intrare</th><th>TP</th><th>SL</th><th>Size</th>
+      ${extraCols}
+      <th>Rezultat</th><th>Data iesire</th><th>PnL $</th><th>PnL %</th>
+    </tr></thead>
+  `;
+
+  const bodyRows = rows.map(r => {
+    const extraCells = isBot2 ? `
+      <td>${r['EMA20']||'—'}</td>
+      <td>${r['EMA50']||'—'}</td>
+      <td>${r['RSI14']||'—'}</td>
+      <td>${r['BB_Upper']||'—'}</td>
+      <td>${r['BB_Lower']||'—'}</td>
+      <td>${r['Vol_Ratio']||'—'}</td>
+    ` : '';
+
+    const pnlUsd = r['PnL $'] || r['PnL $'] || '';
+    const pnlPct = r['PnL %'] || '';
+    const rezultat = r['Rezultat'] || '';
+
+    return `<tr>
+      <td style="color:var(--muted);font-size:12px">${r['Data intrare']||''}</td>
+      <td><span class="symbol">${r['Symbol']||''}</span></td>
+      <td><span class="${signalClass(r['Semnal'])}">${r['Semnal']||''}</span></td>
+      <td>${r['Pret intrare']||''}</td>
+      <td style="color:var(--green);opacity:0.8">${r['TP']||''}</td>
+      <td style="color:var(--red);opacity:0.8">${r['SL']||''}</td>
+      <td style="color:var(--muted)">${r['Size']||''}</td>
+      ${extraCells}
+      <td>${resultBadge(rezultat)}</td>
+      <td style="color:var(--muted);font-size:12px">${r['Data iesire']||'—'}</td>
+      <td class="${pnlClass(pnlUsd)}">${pnlUsd||'—'}</td>
+      <td class="${pnlClass(pnlPct)}">${pnlPct||'—'}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="table-wrap"><table>${header}<tbody>${bodyRows}</tbody></table></div>`;
+}
+
+function updateStats(rows1, rows2) {
+  const all = [...rows1, ...rows2];
+  const closed = all.filter(r => r['Rezultat'] && r['Rezultat'] !== 'OPEN');
+  const tp = closed.filter(r => r['Rezultat'] === 'TP_HIT').length;
+  const sl = closed.filter(r => r['Rezultat'] === 'SL_HIT').length;
+  const open = all.filter(r => !r['Rezultat'] || r['Rezultat'] === 'OPEN').length;
+  const winRate = closed.length > 0 ? ((tp / closed.length) * 100).toFixed(1) : '0.0';
+
+  let totalPnl = 0;
+  all.forEach(r => {
+    const v = parseFloat((r['PnL $']||'0').replace('$',''));
+    if (!isNaN(v)) totalPnl += v;
+  });
+
+  document.getElementById('statTotal').textContent = all.length;
+  document.getElementById('statWin').textContent = winRate + '%';
+  document.getElementById('statTp').textContent = tp;
+  document.getElementById('statSl').textContent = sl;
+  document.getElementById('statOpen').textContent = open;
+
+  const pnlEl = document.getElementById('statPnlUsd');
+  pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + totalPnl.toFixed(2) + '$';
+  pnlEl.className = 'stat-value ' + (totalPnl > 0 ? 'green' : totalPnl < 0 ? 'red' : 'white');
+}
+
+async function loadAll() {
+  document.getElementById('bot1Table').innerHTML = '<div class="loading"><div class="spinner"></div>LOADING...</div>';
+  document.getElementById('bot2Table').innerHTML = '<div class="loading"><div class="spinner"></div>LOADING...</div>';
+
+  try {
+    const [csv1, csv2] = await Promise.all([fetchCSV('trades.csv'), fetchCSV('trades2.csv')]);
+    const rows1 = parseCSV(csv1);
+    const rows2 = parseCSV(csv2);
+
+    document.getElementById('bot1Table').innerHTML = renderTable(rows1, false);
+    document.getElementById('bot2Table').innerHTML = renderTable(rows2, true);
+    updateStats(rows1, rows2);
+
+    const now = new Date();
+    document.getElementById('lastUpdate').textContent =
+      'ACTUALIZAT ' + now.toLocaleTimeString('ro-RO', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  } catch (e) {
+    document.getElementById('bot1Table').innerHTML = `<div class="error-msg">Eroare: ${e.message}</div>`;
+    document.getElementById('bot2Table').innerHTML = `<div class="error-msg">Eroare: ${e.message}</div>`;
+  }
+}
+
+loadAll();
+setInterval(loadAll, 60000); // auto-refresh la 60 secunde
+</script>
+</body>
+</html>
