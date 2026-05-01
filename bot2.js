@@ -1,422 +1,480 @@
-require("dotenv").config();
-// bot2.js — EMA20 + EMA50 + BB + RSI14 + Volume | TP 3% | SL 1.5%
-// Exchange: BitGet USDT-M Futures | Levier: 1x | Timeframe: 1H
-// PC6 — structura identica cu bot1, strategie mai restrictiva la intrare
-// Fix-uri:
-//   [1] defaultType: swap (Futures)
-//   [2] simboluri BTC/USDT:USDT
-//   [3] positions salvate pe GitHub (positions_bot2.json)
-//   [4] placeOrder() cu ordine reale + TP/SL native + confirmare
-//   [5] closePosition() cu qty din JSON, fara fetchPositions()
-//   [6] 22002 = succes, sterge din JSON
-//   [7] qty salvat la deschidere
-//   [8] Telegram notificari
-//   [9] Verificare conflict directie cu bot1
+// bot2.js — PC7 | EMA20 + EMA50 + BB + RSI14 + Volume | BitGet USDT-M Futures
+// Fix principal PC7: TP/SL nativ prin endpoint /api/v2/mix/order/place-tpsl-order
+// volumeMultiplier per simbol: BTC/ETH=1.0x, SOL/DOGE=1.2x
+// Toate fix-urile PC6 incluse
 
 const ccxt = require('ccxt');
-const fs = require('fs');
-const path = require('path');
 const https = require('https');
+const crypto = require('crypto');
 
-const PAPER_TRADING = process.env.PAPER_TRADING !== "false";
-const TRADE_SIZE_USD = parseInt(process.env.TRADE_SIZE) || 10;
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '';
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const SYMBOLS        = ['BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT', 'DOGE/USDT:USDT'];
+const TIMEFRAME      = '1h';
+const TRADE_SIZE     = parseFloat(process.env.TRADE_SIZE || '10');
+const PAPER_TRADING  = process.env.PAPER_TRADING === 'true';
+const TP_PCT         = 0.03;
+const SL_PCT         = 0.015;
+const MIN_QTY        = { 'BTC/USDT:USDT': 0.001, 'ETH/USDT:USDT': 0.01, 'SOL/USDT:USDT': 0.1, 'DOGE/USDT:USDT': 1 };
+const VOL_MULTIPLIER = { 'BTC/USDT:USDT': 1.0, 'ETH/USDT:USDT': 1.0, 'SOL/USDT:USDT': 1.2, 'DOGE/USDT:USDT': 1.2 };
+const CSV_FILE       = 'trades2.csv';
+const POSITIONS_FILE = 'positions_bot2.json';
+const OTHER_POSITIONS_FILE = 'positions_bot1.json';
+const GITHUB_REPO    = 'luchianromeo-art/claude-tradingview-mcp-trading';
+const BOT_NAME       = 'Bot2';
 
-async function sendTelegram(message) {
-  if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
-  const body = JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message, parse_mode: 'HTML' });
-  return new Promise((resolve) => {
+// ─── EXCHANGE ────────────────────────────────────────────────────────────────
+const exchange = new ccxt.bitget({
+  apiKey:   process.env.BITGET_API_KEY,
+  secret:   process.env.BITGET_SECRET,
+  password: process.env.BITGET_PASSPHRASE,
+  options:  { defaultType: 'swap' },
+});
+
+// ─── GITHUB API ──────────────────────────────────────────────────────────────
+async function githubGet(path) {
+  return new Promise((resolve, reject) => {
     const options = {
-      hostname: 'api.telegram.org',
-      path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      hostname: 'api.github.com',
+      path: `/repos/${GITHUB_REPO}/contents/${path}`,
+      method: 'GET',
+      headers: {
+        'Authorization': `token ${process.env.GITHUB_TOKEN}`,
+        'User-Agent': 'trading-bot',
+        'Accept': 'application/vnd.github.v3+json',
+      },
     };
     const req = https.request(options, (res) => {
-      res.on('data', () => {});
-      res.on('end', () => { console.log('  Telegram: ✅'); resolve(); });
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => resolve(JSON.parse(data)));
     });
-    req.on('error', () => resolve());
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function githubPut(path, content, sha) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      message: `${BOT_NAME} update ${path}`,
+      content: Buffer.from(content).toString('base64'),
+      sha: sha || undefined,
+    });
+    const options = {
+      hostname: 'api.github.com',
+      path: `/repos/${GITHUB_REPO}/contents/${path}`,
+      method: 'PUT',
+      headers: {
+        'Authorization': `token ${process.env.GITHUB_TOKEN}`,
+        'User-Agent': 'trading-bot',
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    };
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => resolve(JSON.parse(data)));
+    });
+    req.on('error', reject);
     req.write(body);
     req.end();
   });
 }
 
-const CONFIG = {
-  symbols: ['BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT', 'DOGE/USDT:USDT'],
-  timeframe: '1h',
-  limit: 100,
-  takeProfitPct: 0.03,
-  stopLossPct: 0.015,
-  leverage: 1,
-  bbPeriod: 20,
-  bbStdDev: 2,
-  rsiPeriod: 14,
-  emaFast: 20,
-  emaSlow: 50,
-  volumeMultiplier: { 'BTC/USDT:USDT': 1.0, 'ETH/USDT:USDT': 1.0, 'SOL/USDT:USDT': 1.2, 'DOGE/USDT:USDT': 1.2 },
-  csvFile: path.join(__dirname, 'trades2.csv'),
-  github: {
-    token: process.env.GITHUB_TOKEN || '',
-    owner: 'luchianromeo-art',
-    repo: 'claude-tradingview-mcp-trading',
-    csvPath: 'trades2.csv',
-    positionsPath: 'positions_bot2.json',
-    positionsBot1Path: 'positions_bot1.json',
-  },
-};
-
-const exchange = new ccxt.bitget({
-  apiKey: process.env.BITGET_API_KEY || '',
-  secret: process.env.BITGET_SECRET || '',
-  password: process.env.BITGET_PASSPHRASE || '',
-  options: { defaultType: 'swap' },
-});
-
-function shortSymbol(symbol) { return symbol.split('/')[0]; }
-function formatSizeUsd(value) { return `${Number(value).toFixed(2).replace(/\.00$/, '')}$`; }
-function formatPnlUsd(pnlPct) {
-  const value = TRADE_SIZE_USD * (pnlPct / 100);
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}$`;
-}
-function formatPrice(symbol, price) {
-  if (symbol.includes('BTC') || symbol.includes('ETH')) return Math.round(price).toLocaleString('en-US').replace(/,/g, '.');
-  if (symbol.includes('SOL')) return price.toFixed(2);
-  return price.toFixed(5);
-}
-function formatPct(pct) { return parseFloat(pct).toFixed(2); }
-function formatDate(isoString) {
-  const d = new Date(isoString);
-  const pad = n => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+async function loadPositions(filename) {
+  try {
+    const res = await githubGet(filename);
+    if (res.content) {
+      const text = Buffer.from(res.content, 'base64').toString('utf8');
+      return { data: JSON.parse(text), sha: res.sha };
+    }
+  } catch (e) {}
+  return { data: {}, sha: null };
 }
 
+async function savePositions(filename, positions, sha) {
+  try {
+    let freshSha = sha;
+    try {
+      const current = await githubGet(filename);
+      if (current && current.sha) freshSha = current.sha;
+    } catch (e) {}
+    await githubPut(filename, JSON.stringify(positions, null, 2), freshSha);
+  } catch (e) {
+    console.error(`[${BOT_NAME}] savePositions error:`, e.message);
+  }
+}
+
+async function loadCSV() {
+  try {
+    const res = await githubGet(CSV_FILE);
+    if (res.content) {
+      return { text: Buffer.from(res.content, 'base64').toString('utf8'), sha: res.sha };
+    }
+  } catch (e) {}
+  return { text: 'Data intrare,Symbol,Semnal,Pret intrare,TP,SL,Size,EMA20,EMA50,RSI14,BB_Upper,BB_Lower,BB_Width,Vol_Ratio,Rezultat,Data iesire,PnL $,PnL %\n', sha: null };
+}
+
+async function appendCSV(row, existingCSV) {
+  const lines = existingCSV.text.trim().split('\n');
+  const header = lines[0];
+  const rest   = lines.slice(1).join('\n');
+  const newContent = header + '\n' + row + (rest ? '\n' + rest : '') + '\n';
+  await githubPut(CSV_FILE, newContent, existingCSV.sha);
+}
+
+// ─── TELEGRAM ────────────────────────────────────────────────────────────────
+async function sendTelegram(msg) {
+  const token  = process.env.TELEGRAM_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  try {
+    const body = JSON.stringify({ chat_id: chatId, text: msg });
+    await new Promise((resolve, reject) => {
+      const req = https.request({
+        hostname: 'api.telegram.org',
+        path: `/bot${token}/sendMessage`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+  } catch (e) {
+    console.error(`[${BOT_NAME}] Telegram error:`, e.message);
+  }
+}
+
+function tgOpen(signal, symbol, price, tp, sl) {
+  const emoji = signal === 'BUY' ? '🟢' : '🔴';
+  const symShort = symbol.replace('/USDT:USDT', 'USDT');
+  return `🔴 [BOT2] ${emoji} ${signal}\n📊 ${symShort}\n💰 Entry: ${price}\n🎯 TP: ${tp} (+${(TP_PCT*100).toFixed(0)}%)\n🛑 SL: ${sl} (-${(SL_PCT*100).toFixed(0)}%)\n💵 Size: ${TRADE_SIZE} USDT\n💰 REAL`;
+}
+
+function tgClose(result, symbol, pnlPct, pnlUsd) {
+  const emoji = result === 'TP_HIT' ? '✅' : '❌';
+  const symShort = symbol.replace('/USDT:USDT', 'USDT');
+  return `🔴 [BOT2] ${emoji} ${result}\n📊 ${symShort}\n💵 PnL: ${pnlUsd}$ (${pnlPct}%)`;
+}
+
+function tgTPSLPartial(symbol, tpOk, slOk) {
+  const symShort = symbol.replace('/USDT:USDT', 'USDT');
+  return `⚠️ BOT2 TP/SL partial\n📊 ${symShort}\nTP:${tpOk?'✅':'❌'} SL:${slOk?'✅':'❌'}\nVerifica manual!`;
+}
+
+// ─── BITGET DIRECT API (pentru TP/SL nativ PC7) ──────────────────────────────
+function bitgetSign(timestamp, method, requestPath, body = '') {
+  const prehash = timestamp + method.toUpperCase() + requestPath + body;
+  return crypto.createHmac('sha256', process.env.BITGET_SECRET).update(prehash).digest('base64');
+}
+
+async function placeBitgetTPSL({ symbol, side, entryPrice }) {
+  const tpPrice = side === 'buy'
+    ? (entryPrice * (1 + TP_PCT)).toFixed(2)
+    : (entryPrice * (1 - TP_PCT)).toFixed(2);
+  const slPrice = side === 'buy'
+    ? (entryPrice * (1 - SL_PCT)).toFixed(2)
+    : (entryPrice * (1 + SL_PCT)).toFixed(2);
+
+  const productId = symbol.replace('/USDT:USDT', 'USDT');
+  const holdSide  = side === 'buy' ? 'long' : 'short';
+  const timestamp = Date.now().toString();
+  const path      = '/api/v2/mix/order/place-tpsl-order';
+
+  let tpOk = false, slOk = false;
+
+  for (const [planType, triggerPrice] of [['profit_plan', tpPrice], ['loss_plan', slPrice]]) {
+    const bodyObj = {
+      symbol:       productId,
+      productType:  'USDT-FUTURES',
+      marginMode:   'crossed',
+      marginCoin:   'USDT',
+      planType,
+      triggerPrice,
+      holdSide,
+      size:         String(qty),
+    };
+    const bodyStr = JSON.stringify(bodyObj);
+    const sign    = bitgetSign(timestamp, 'POST', path, bodyStr);
+
+    await new Promise((resolve) => {
+      const req = https.request({
+        hostname: 'api.bitget.com',
+        path,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ACCESS-KEY': process.env.BITGET_API_KEY,
+          'ACCESS-SIGN': sign,
+          'ACCESS-TIMESTAMP': timestamp,
+          'ACCESS-PASSPHRASE': process.env.BITGET_PASSPHRASE,
+          'locale': 'en-US',
+          'Content-Length': Buffer.byteLength(bodyStr),
+        },
+      }, (res) => {
+        let data = '';
+        res.on('data', d => data += d);
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.code === '00000') {
+              console.log(`[${BOT_NAME}] TP/SL nativ setat: ${planType} @ ${triggerPrice}`);
+              if (planType === 'profit_plan') tpOk = true;
+              if (planType === 'loss_plan') slOk = true;
+            } else {
+              console.warn(`[${BOT_NAME}] TP/SL ${planType} warning: ${parsed.msg}`);
+            }
+          } catch (e) {}
+          resolve();
+        });
+      });
+      req.on('error', (e) => { console.warn(`[${BOT_NAME}] TP/SL request error: ${e.message}`); resolve(); });
+      req.write(bodyStr);
+      req.end();
+    });
+  }
+
+  if (!tpOk || !slOk) {
+    await sendTelegram(tgTPSLPartial(symbol, tpOk, slOk));
+  }
+
+  return { tpPrice, slPrice };
+}
+
+// ─── INDICATORI ──────────────────────────────────────────────────────────────
 function calcEMA(closes, period) {
   const k = 2 / (period + 1);
-  let ema = closes[0];
-  for (let i = 1; i < closes.length; i++) ema = closes[i] * k + ema * (1 - k);
+  let ema = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < closes.length; i++) {
+    ema = closes[i] * k + ema * (1 - k);
+  }
   return ema;
 }
-function calcRSI(closes, period = 14) {
+
+function calcRSI(closes, period) {
   if (closes.length < period + 1) return 50;
   let gains = 0, losses = 0;
   for (let i = closes.length - period; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
-    if (diff >= 0) gains += diff; else losses -= diff;
+    if (diff > 0) gains += diff;
+    else losses += Math.abs(diff);
   }
   if (gains === 0 && losses === 0) return 50;
-  const avgLoss = losses / period;
-  if (avgLoss === 0) return 100;
-  return 100 - 100 / (1 + (gains / period) / avgLoss);
+  if (losses === 0) return 100;
+  if (gains === 0) return 0;
+  return 100 - (100 / (1 + gains / losses));
 }
-function calcBB(closes, period = 20, mult = 2) {
+
+function calcBB(closes, period = 20, stdMult = 2) {
   const slice = closes.slice(-period);
-  const mean = slice.reduce((a, b) => a + b, 0) / period;
-  const stdDev = Math.sqrt(slice.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / period);
-  return { upper: mean + mult * stdDev, lower: mean - mult * stdDev, mid: mean };
+  const mean  = slice.reduce((a, b) => a + b, 0) / period;
+  const variance = slice.reduce((s, x) => s + Math.pow(x - mean, 2), 0) / period;
+  const std   = Math.sqrt(variance);
+  return { upper: mean + stdMult * std, middle: mean, lower: mean - stdMult * std };
 }
-function calcAvgVol(candles, period = 20) {
+
+function calcAvgVolume(candles, period = 20) {
   const vols = candles.slice(-period).map(c => c[5]);
   return vols.reduce((a, b) => a + b, 0) / period;
 }
 
-function getSignal(candles, symbol) {
-  const closes = candles.map(c => c[4]);
-  const ema20 = calcEMA(closes, CONFIG.emaFast);
-  const ema50 = calcEMA(closes, CONFIG.emaSlow);
-  const rsi14 = calcRSI(closes, CONFIG.rsiPeriod);
-  const bb = calcBB(closes, CONFIG.bbPeriod, CONFIG.bbStdDev);
-  const avgVol = calcAvgVol(candles, 20);
-  const lastVol = candles[candles.length - 1][5];
-  const volRatio = avgVol > 0 ? lastVol / avgVol : 1;
-  const volThreshold = CONFIG.volumeMultiplier[symbol] || 1.2;
-  const volOk = volRatio >= volThreshold;
-  const lastClose = closes[closes.length - 1];
-
-  console.log(`  EMA20=${ema20.toFixed(4)} | EMA50=${ema50.toFixed(4)} | RSI14=${rsi14.toFixed(2)}`);
-  console.log(`  BB[${bb.lower.toFixed(4)}-${bb.upper.toFixed(4)}] | Vol=${volRatio.toFixed(2)}x | Close=${lastClose}`);
-
-  let signal = 'HOLD';
-  if (ema20 > ema50 && lastClose <= bb.lower * 1.01 && rsi14 > 30 && rsi14 < 55 && volOk) signal = 'BUY';
-  if (ema20 < ema50 && lastClose >= bb.upper * 0.99 && rsi14 > 55 && rsi14 < 80 && volOk) signal = 'SELL';
-
-  return { signal, ema20, ema50, rsi14, bb, volRatio, lastClose };
+// ─── FORMAT DATA ─────────────────────────────────────────────────────────────
+function formatDate(d) {
+  const dd   = String(d.getDate()).padStart(2, '0');
+  const mm   = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh   = String(d.getHours()).padStart(2, '0');
+  const min  = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}.${mm}.${yyyy} ${hh}:${min}`;
 }
 
+function formatPrice(symbol, price) {
+  if (symbol.startsWith('BTC') || symbol.startsWith('ETH')) {
+    return Math.round(price).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+  if (symbol.startsWith('SOL')) return price.toFixed(2);
+  return price.toFixed(5);
+}
+
+// ─── CLOSE POSITION ──────────────────────────────────────────────────────────
+async function closePosition(symbol, side, qty) {
+  const closeSide = side === 'buy' ? 'sell' : 'buy';
+  try {
+    await exchange.createMarketOrder(symbol, closeSide, qty, undefined, {
+      reduceOnly: true,
+      tradeSide: 'close',
+    });
+    console.log(`[${BOT_NAME}] Poziție închisă: ${symbol} qty=${qty}`);
+    return true;
+  } catch (e) {
+    if (e.message && e.message.includes('22002')) {
+      console.log(`[${BOT_NAME}] 22002 — poziție deja închisă (TP/SL nativ): ${symbol}`);
+      return true;
+    }
+    console.error(`[${BOT_NAME}] closePosition error ${symbol}:`, e.message);
+    return false;
+  }
+}
+
+// ─── LEVERAGE ────────────────────────────────────────────────────────────────
 async function setLeverage(symbol) {
   try {
-    await exchange.setLeverage(CONFIG.leverage, symbol, { marginCoin: 'USDT', holdSide: 'long' });
-    await exchange.setLeverage(CONFIG.leverage, symbol, { marginCoin: 'USDT', holdSide: 'short' });
-    console.log(`  Leverage set: ${CONFIG.leverage}x (long+short)`);
-  } catch (e) { console.log(`  Leverage note: ${e.message}`); }
-}
-
-async function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-
-async function placeOrder(symbol, signal, lastClose) {
-  const minSizes = { 'BTC/USDT:USDT': 0.001, 'ETH/USDT:USDT': 0.01, 'SOL/USDT:USDT': 0.1, 'DOGE/USDT:USDT': 1 };
-  const minSize = minSizes[symbol] || 0.01;
-  let qty = parseFloat((TRADE_SIZE_USD / lastClose).toFixed(6));
-  if (qty < minSize) qty = minSize;
-  if (symbol.includes('BTC')) qty = parseFloat(qty.toFixed(3));
-  else if (symbol.includes('ETH')) qty = parseFloat(qty.toFixed(2));
-  else if (symbol.includes('SOL')) qty = parseFloat(qty.toFixed(1));
-  else qty = parseFloat(qty.toFixed(0));
-
-  const side = signal === 'BUY' ? 'buy' : 'sell';
-  const tp = signal === 'BUY'
-    ? parseFloat((lastClose * (1 + CONFIG.takeProfitPct)).toFixed(6))
-    : parseFloat((lastClose * (1 - CONFIG.takeProfitPct)).toFixed(6));
-  const sl = signal === 'BUY'
-    ? parseFloat((lastClose * (1 - CONFIG.stopLossPct)).toFixed(6))
-    : parseFloat((lastClose * (1 + CONFIG.stopLossPct)).toFixed(6));
-
-  console.log(`  Placing ${side}: ${qty} @ ~${lastClose} | TP=${tp} SL=${sl}`);
-  try {
-    await setLeverage(symbol);
-    const order = await exchange.createMarketOrder(symbol, side, qty, undefined, {
-      tradeSide: 'open',
-    });
-    if (!order || !order.id) { console.error(`  ❌ Order failed: no id`); return null; }
-    console.log(`  ✅ Order placed: ${order.id}`);
-
-    // TP/SL nativ BitGet — apeluri separate dupa deschidere
-    await sleep(1000);
-    const closeSideTP = side === 'buy' ? 'sell' : 'buy';
-    let tpOk = false, slOk = false;
-    try {
-      await exchange.createOrder(symbol, 'limit', closeSideTP, qty, tp, {
-        tradeSide: 'close',
-        reduceOnly: true,
-        stopPrice: tp,
-        triggerType: 'mark_price',
-      });
-      tpOk = true;
-      console.log(`  ✅ TP setat @ ${tp}`);
-    } catch (e) { console.log(`  ⚠️ TP eroare: ${e.message}`); }
-    try {
-      await exchange.createOrder(symbol, 'stop_market', closeSideTP, qty, undefined, {
-        tradeSide: 'close',
-        reduceOnly: true,
-        stopPrice: sl,
-        triggerType: 'mark_price',
-      });
-      slOk = true;
-      console.log(`  ✅ SL setat @ ${sl}`);
-    } catch (e) { console.log(`  ⚠️ SL eroare: ${e.message}`); }
-    if (!tpOk || !slOk) {
-      await sendTelegram(`⚠️ <b>BOT2 TP/SL partial</b>\n📊 ${symbol} | ${signal}\nTP:${tpOk?'✅':'❌'} SL:${slOk?'✅':'❌'}\nVerifica manual!`);
-    }
-
-    return { id: order.id, qty };
+    await exchange.setLeverage(1, symbol, { marginCoin: 'USDT', holdSide: 'long' });
+    await exchange.setLeverage(1, symbol, { marginCoin: 'USDT', holdSide: 'short' });
   } catch (e) {
-    console.error(`  ❌ Order failed: ${e.message}`);
-    return null;
+    console.warn(`[${BOT_NAME}] setLeverage warn ${symbol}: ${e.message}`);
   }
 }
 
-// qty din positions_bot2.json — fara fetchPositions()
-// 22002 = deja inchisa = SUCCES
-async function closePosition(symbol, side, qty, maxRetries = 3) {
-  const closeSide = side === 'LONG' ? 'sell' : 'buy';
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`  Close attempt ${attempt}/${maxRetries} | ${symbol} | qty=${qty} | ${closeSide}`);
-      if (!qty || qty <= 0) { console.error(`  ❌ qty invalid: ${qty}`); return false; }
-      const order = await exchange.createMarketOrder(symbol, closeSide, qty, undefined, { tradeSide: 'close' });
-      if (order && order.id) { console.log(`  ✅ closed: ${order.id}`); return true; }
-      console.error(`  ❌ no confirmation`);
-    } catch (e) {
-      if (e.message && e.message.includes('22002')) {
-        console.log(`  ✅ 22002 — deja inchisa (manual sau nativ) — sterg din JSON`);
-        return true;
-      }
-      console.error(`  ❌ attempt ${attempt}: ${e.message}`);
-    }
-    if (attempt < maxRetries) await sleep(1500);
-  }
-  return false;
-}
+// ─── MAIN ────────────────────────────────────────────────────────────────────
+async function main() {
+  console.log(`\n[${BOT_NAME}] === PC7 START ${new Date().toISOString()} ===`);
+  console.log(`[${BOT_NAME}] PAPER_TRADING=${PAPER_TRADING} | TRADE_SIZE=${TRADE_SIZE}`);
 
-async function getGitHubFileSHA(filePath) {
-  return new Promise((resolve) => {
-    const options = {
-      hostname: 'api.github.com',
-      path: `/repos/${CONFIG.github.owner}/${CONFIG.github.repo}/contents/${filePath}`,
-      method: 'GET',
-      headers: { 'Authorization': `token ${CONFIG.github.token}`, 'User-Agent': 'trading-bot', 'Accept': 'application/vnd.github.v3+json' },
-    };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => { try { resolve(JSON.parse(data).sha || null); } catch { resolve(null); } });
-    });
-    req.on('error', () => resolve(null));
-    req.end();
-  });
-}
-
-async function pushFileToGitHub(filePath, content, message) {
-  const sha = await getGitHubFileSHA(filePath);
-  const body = JSON.stringify({ message, content: Buffer.from(content).toString('base64'), ...(sha ? { sha } : {}) });
-  return new Promise((resolve) => {
-    const options = {
-      hostname: 'api.github.com',
-      path: `/repos/${CONFIG.github.owner}/${CONFIG.github.repo}/contents/${filePath}`,
-      method: 'PUT',
-      headers: { 'Authorization': `token ${CONFIG.github.token}`, 'User-Agent': 'trading-bot', 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-    };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => { console.log(`  GitHub sync ${filePath}: ${[200,201].includes(res.statusCode)?'✅':'❌ '+res.statusCode}`); resolve(); });
-    });
-    req.on('error', e => { console.error(`  GitHub error:`, e.message); resolve(); });
-    req.write(body); req.end();
-  });
-}
-
-async function loadJSON(githubPath) {
-  return new Promise((resolve) => {
-    const options = {
-      hostname: 'api.github.com',
-      path: `/repos/${CONFIG.github.owner}/${CONFIG.github.repo}/contents/${githubPath}`,
-      method: 'GET',
-      headers: { 'Authorization': `token ${CONFIG.github.token}`, 'User-Agent': 'trading-bot', 'Accept': 'application/vnd.github.v3+json' },
-    };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.content) resolve(JSON.parse(Buffer.from(parsed.content, 'base64').toString('utf8')));
-          else resolve({});
-        } catch { resolve({}); }
-      });
-    });
-    req.on('error', () => resolve({}));
-    req.end();
-  });
-}
-
-async function savePositions(positions) {
-  await pushFileToGitHub(CONFIG.github.positionsPath, JSON.stringify(positions, null, 2), `positions_bot2 update ${new Date().toISOString()}`);
-}
-
-const CSV_HEADER = 'Data intrare,Symbol,Semnal,Pret intrare,TP,SL,Size,Rezultat,Data iesire,PnL $,PnL %\n';
-function ensureCSV() { if (!fs.existsSync(CONFIG.csvFile)) fs.writeFileSync(CONFIG.csvFile, CSV_HEADER); }
-function appendTrade(row) {
-  const newLine = [row.dataIntrare, row.symbol, row.semnal, row.pretIntrare, row.tp, row.sl, row.sizeUsdt, row.rezultat, row.dataIesire, row.pnlUsd, row.pnl].join(',') + '\n';
-  const existing = fs.readFileSync(CONFIG.csvFile, 'utf8');
-  const rest = existing.split('\n').slice(1).join('\n');
-  fs.writeFileSync(CONFIG.csvFile, CSV_HEADER + newLine + (rest.trim() ? rest.trim() + '\n' : ''));
-}
-
-async function run() {
-  console.log(`\n[bot2.js] Run started: ${new Date().toISOString()}`);
-  console.log(`  Mode: ${PAPER_TRADING ? '📄 PAPER TRADING' : '💰 REAL TRADING — BitGet Futures 1x'}`);
-  ensureCSV();
-
-  const positions = await loadJSON(CONFIG.github.positionsPath);
-  const posBot1 = await loadJSON(CONFIG.github.positionsBot1Path);
-  console.log(`  Positions loaded: ${Object.keys(positions).length} open`);
+  const csv                               = await loadCSV();
+  const { data: positions, sha: posSha } = await loadPositions(POSITIONS_FILE);
+  const { data: otherPositions }          = await loadPositions(OTHER_POSITIONS_FILE);
   let positionsChanged = false;
 
-  for (const symbol of CONFIG.symbols) {
+  for (const symbol of SYMBOLS) {
     try {
-      console.log(`\n[${symbol}] Fetching candles...`);
-      const candles = await exchange.fetchOHLCV(symbol, CONFIG.timeframe, undefined, CONFIG.limit);
-      if (!candles || candles.length < 55) { console.log(`  Date insuficiente`); continue; }
+      console.log(`\n[${BOT_NAME}] --- ${symbol} ---`);
+      const symShort = symbol.split('/')[0] + 'USDT';
 
-      const lastClose = candles[candles.length - 1][4];
-      const now = new Date().toISOString();
-      const pos = positions[symbol];
+      // ── 1. Verifică TP/SL pentru pozițiile deschise ──────────────────────
+      if (positions[symbol]) {
+        const pos      = positions[symbol];
+        const ticker   = await exchange.fetchTicker(symbol);
+        const curPrice = ticker.last;
+        const pnlPct   = pos.side === 'buy'
+          ? (curPrice - pos.entryPrice) / pos.entryPrice
+          : (pos.entryPrice - curPrice) / pos.entryPrice;
 
-      if (pos) {
-        const pnlPct = ((lastClose - pos.entryPrice) / pos.entryPrice) * (pos.side === 'LONG' ? 1 : -1);
-        const tpHit = pnlPct >= CONFIG.takeProfitPct;
-        const slHit = pnlPct <= -CONFIG.stopLossPct;
+        console.log(`[${BOT_NAME}] Poziție deschisă: ${symbol} ${pos.side.toUpperCase()} entry=${pos.entryPrice} cur=${curPrice} pnl=${(pnlPct * 100).toFixed(2)}%`);
 
-        if (tpHit || slHit) {
-          const result = tpHit ? 'TP_HIT' : 'SL_HIT';
-          const emoji = tpHit ? '✅' : '🔴';
-          console.log(`  [${result}] ${pos.side} @ ${lastClose} | PnL: ${(pnlPct*100).toFixed(2)}%`);
-
-          if (!PAPER_TRADING) {
-            const closed = await closePosition(symbol, pos.side, pos.qty);
-            if (!closed) {
-              console.error(`  ❌ Close failed — skip`);
-              await sendTelegram(`⚠️ <b>BOT2 CLOSE FAILED</b>\n📊 ${symbol} | ${pos.side}\nVerifica manual!`);
+        // ── PC7 FIX: verifică dacă BitGet a închis deja prin TP/SL nativ ──
+        if (!PAPER_TRADING) {
+          try {
+            const openPos = await exchange.fetchPositions([symbol]);
+            const stillOpen = openPos.some(p => p.symbol === symbol && Math.abs(p.contracts) > 0);
+            if (!stillOpen) {
+              const result = pnlPct >= 0 ? 'TP_HIT' : 'SL_HIT';
+              const pnlUsd = (pnlPct * TRADE_SIZE).toFixed(2);
+              const row = `${formatDate(new Date())},${symShort},${result},${formatPrice(symShort, curPrice)},${formatPrice(symShort, pos.tp)},${formatPrice(symShort, pos.sl)},${TRADE_SIZE}$,${pos.ema20||''},${pos.ema50||''},${pos.rsi14||''},${pos.bbUpper||''},${pos.bbLower||''},${pos.bbWidth||''},${pos.volRatio||''},${result},${formatDate(new Date())},${pnlUsd}$,${(pnlPct * 100).toFixed(2)}%`;
+              await appendCSV(row, csv);
+              csv.text = row + '\n' + csv.text;
+              await sendTelegram(tgClose(result, symbol, (pnlPct * 100).toFixed(2), pnlUsd));
+              delete positions[symbol];
+              positionsChanged = true;
+              console.log(`[${BOT_NAME}] ${result} detectat via BitGet nativ: ${symbol} PnL=${(pnlPct * 100).toFixed(2)}%`);
               continue;
             }
+          } catch (e) {
+            console.warn(`[${BOT_NAME}] fetchPositions warn ${symbol}: ${e.message}`);
           }
+        }
 
-          appendTrade({
-            dataIntrare: formatDate(pos.openedAt), symbol: shortSymbol(symbol),
-            semnal: `CLOSE_${pos.side}`, pretIntrare: formatPrice(symbol, pos.entryPrice),
-            tp: formatPrice(symbol, pos.tp), sl: formatPrice(symbol, pos.sl),
-            sizeUsdt: formatSizeUsd(TRADE_SIZE_USD), rezultat: result,
-            dataIesire: formatDate(now), pnlUsd: formatPnlUsd(pnlPct*100), pnl: formatPct(pnlPct*100),
-          });
-          await sendTelegram(`${emoji} <b>BOT2 ${result}</b>\n📊 ${symbol} | ${pos.side}\n💰 Entry: ${formatPrice(symbol, pos.entryPrice)}\n📍 Exit: ${formatPrice(symbol, lastClose)}\n📈 PnL: ${(pnlPct*100).toFixed(2)}%\n💵 ${tpHit?'+':''}${(pnlPct*TRADE_SIZE_USD).toFixed(3)} USDT`);
-          delete positions[symbol];
-          positionsChanged = true;
-        } else {
-          console.log(`  Holding ${pos.side} | Entry=${pos.entryPrice} | Now=${lastClose} | PnL=${(pnlPct*100).toFixed(2)}%`);
+        let result = null;
+        if (pnlPct >= TP_PCT) result = 'TP_HIT';
+        if (pnlPct <= -SL_PCT) result = 'SL_HIT';
+
+        if (result) {
+          const closed = PAPER_TRADING ? true : await closePosition(symbol, pos.side, pos.qty);
+          if (closed) {
+            const pnlUsd = (pnlPct * TRADE_SIZE).toFixed(2);
+            const row = `${formatDate(new Date())},${symShort},${result},${formatPrice(symShort, curPrice)},${formatPrice(symShort, pos.tp)},${formatPrice(symShort, pos.sl)},${TRADE_SIZE}$,${pos.ema20||''},${pos.ema50||''},${pos.rsi14||''},${pos.bbUpper||''},${pos.bbLower||''},${pos.bbWidth||''},${pos.volRatio||''},${result},${formatDate(new Date())},${pnlUsd}$,${(pnlPct * 100).toFixed(2)}%`;
+            await appendCSV(row, csv);
+            csv.text = row + '\n' + csv.text;
+            await sendTelegram(tgClose(result, symbol, (pnlPct * 100).toFixed(2), pnlUsd));
+            delete positions[symbol];
+            positionsChanged = true;
+          }
         }
         continue;
       }
 
-      const signalData = getSignal(candles, symbol);
-      const signal = signalData.signal;
-      if (signal !== 'BUY' && signal !== 'SELL') { console.log(`  HOLD — no trade.`); continue; }
+      // ── 2. Calculează indicatori ─────────────────────────────────────────
+      const candles  = await exchange.fetchOHLCV(symbol, TIMEFRAME, undefined, 60);
+      if (candles.length < 50) { console.log(`[${BOT_NAME}] Date insuficiente ${symbol}`); continue; }
 
-      // Verifica conflict directie cu bot1
-      const b1pos = posBot1[symbol];
-      if (b1pos) {
-        const conflict = (signal === 'BUY' && b1pos.side === 'LONG') || (signal === 'SELL' && b1pos.side === 'SHORT');
-        if (conflict) { console.log(`  ⚠️ SKIP — conflict cu Bot1 (${b1pos.side})`); continue; }
+      const closes   = candles.map(c => c[4]);
+      const ema20    = calcEMA(closes, 20);
+      const ema50    = calcEMA(closes, 50);
+      const rsi14    = calcRSI(closes, 14);
+      const bb       = calcBB(closes, 20);
+      const curVol   = candles[candles.length - 1][5];
+      const avgVol   = calcAvgVolume(candles, 20);
+      const volRatio = avgVol > 0 ? curVol / avgVol : 0;
+      const price    = closes[closes.length - 1];
+      const volThreshold = VOL_MULTIPLIER[symbol];
+
+      console.log(`[${BOT_NAME}] ${symbol} | Price=${price.toFixed(4)} EMA20=${ema20.toFixed(4)} EMA50=${ema50.toFixed(4)} RSI14=${rsi14.toFixed(1)} BB_L=${bb.lower.toFixed(4)} BB_U=${bb.upper.toFixed(4)} Vol=${volRatio.toFixed(2)}x (prag ${volThreshold}x)`);
+
+      let signal = null;
+      const volOk = volRatio >= volThreshold;
+
+      if (ema20 > ema50 && price <= bb.lower * 1.01 && rsi14 >= 30 && rsi14 <= 55 && volOk) signal = 'BUY';
+      if (ema20 < ema50 && price >= bb.upper * 0.99 && rsi14 >= 55 && rsi14 <= 80 && volOk) signal = 'SELL';
+
+      if (!signal) { console.log(`[${BOT_NAME}] HOLD — no trade (volOk=${volOk} ratio=${volRatio.toFixed(2)}x)`); continue; }
+
+      // ── 3. Verifică conflict cross-bot ───────────────────────────────────
+      if (otherPositions[symbol]) {
+        const otherSide = otherPositions[symbol].side;
+        const thisSide  = signal === 'BUY' ? 'buy' : 'sell';
+        if (otherSide === thisSide) {
+          console.log(`[${BOT_NAME}] BLOCAT — Bot1 are deja ${otherSide} pe ${symbol}`);
+          continue;
+        }
       }
 
-      const side = signal === 'BUY' ? 'LONG' : 'SHORT';
-      const tp = signal === 'BUY' ? +(lastClose*(1+CONFIG.takeProfitPct)).toFixed(6) : +(lastClose*(1-CONFIG.takeProfitPct)).toFixed(6);
-      const sl = signal === 'BUY' ? +(lastClose*(1-CONFIG.stopLossPct)).toFixed(6) : +(lastClose*(1+CONFIG.stopLossPct)).toFixed(6);
+      // ── 4. Calculează qty și TP/SL ───────────────────────────────────────
+      const side  = signal === 'BUY' ? 'buy' : 'sell';
+      let qty     = Math.max(TRADE_SIZE / price, MIN_QTY[symbol]);
+      qty         = parseFloat(qty.toFixed(symbol.startsWith('BTC') ? 3 : symbol.startsWith('ETH') ? 2 : symbol.startsWith('SOL') ? 1 : 0));
 
-      let qty;
+      const tpPrice = side === 'buy' ? price * (1 + TP_PCT) : price * (1 - TP_PCT);
+      const slPrice = side === 'buy' ? price * (1 - SL_PCT) : price * (1 + SL_PCT);
+
+      console.log(`[${BOT_NAME}] SEMNAL: ${signal} | ${symbol} | qty=${qty} | TP=${tpPrice.toFixed(4)} | SL=${slPrice.toFixed(4)}`);
+
       if (!PAPER_TRADING) {
-        const order = await placeOrder(symbol, signal, lastClose);
-        if (!order) { console.error(`  ❌ Order failed — skip`); continue; }
-        qty = order.qty;
-      } else {
-        const minSizes = { 'BTC/USDT:USDT': 0.001, 'ETH/USDT:USDT': 0.01, 'SOL/USDT:USDT': 0.1, 'DOGE/USDT:USDT': 1 };
-        qty = parseFloat((TRADE_SIZE_USD / lastClose).toFixed(6));
-        if (qty < (minSizes[symbol]||0.01)) qty = minSizes[symbol]||0.01;
-        console.log(`  [PAPER] ${signal} qty=${qty} TP=${tp} SL=${sl}`);
+        await setLeverage(symbol);
+        await exchange.createMarketOrder(symbol, side, qty, undefined, {
+          tradeSide: 'open',
+          marginCoin: 'USDT',
+        });
+
+        // PC7 FIX: TP/SL nativ
+        const { tpPrice: tpNative, slPrice: slNative } = await placeBitgetTPSL({ symbol, side, entryPrice: price, qty });
+        console.log(`[${BOT_NAME}] TP/SL nativ: TP=${tpNative} SL=${slNative}`);
       }
 
-      positions[symbol] = { side, entryPrice: lastClose, qty, tp, sl, openedAt: now };
+      // ── 5. Salvează poziția ───────────────────────────────────────────────
+      const bbWidth = ((bb.upper - bb.lower) / bb.middle * 100).toFixed(2);
+      positions[symbol] = { side, entryPrice: price, qty, tp: tpPrice, sl: slPrice, openTime: Date.now(),
+        ema20: ema20.toFixed(4), ema50: ema50.toFixed(4), rsi14: rsi14.toFixed(2),
+        bbUpper: bb.upper.toFixed(4), bbLower: bb.lower.toFixed(4), bbWidth, volRatio: volRatio.toFixed(2) };
       positionsChanged = true;
-      console.log(`  ✅ ${signal} | Entry=${lastClose} TP=${tp} SL=${sl} qty=${qty}`);
 
-      appendTrade({
-        dataIntrare: formatDate(now), symbol: shortSymbol(symbol), semnal: signal,
-        pretIntrare: formatPrice(symbol, lastClose), tp: formatPrice(symbol, tp), sl: formatPrice(symbol, sl),
-        sizeUsdt: formatSizeUsd(TRADE_SIZE_USD), rezultat: 'OPEN', dataIesire: '', pnlUsd: '0.00$', pnl: '0.00',
-      });
-      const emoji = signal === 'BUY' ? '🟢' : '🔴';
-      await sendTelegram(`${emoji} <b>BOT2 ${signal}</b>\n📊 ${symbol}\n💰 Entry: ${formatPrice(symbol, lastClose)}\n🎯 TP: ${formatPrice(symbol, tp)} (+3%)\n🛑 SL: ${formatPrice(symbol, sl)} (-1.5%)\n💵 Size: ${TRADE_SIZE_USD} USDT\n${PAPER_TRADING?'📄 PAPER':'💰 REAL'}`);
+      // ── 6. Salvează în CSV ────────────────────────────────────────────────
+      const row = `${formatDate(new Date())},${symShort},${signal},${formatPrice(symShort, price)},${formatPrice(symShort, tpPrice)},${formatPrice(symShort, slPrice)},${TRADE_SIZE}$,${ema20.toFixed(4)},${ema50.toFixed(4)},${rsi14.toFixed(2)},${bb.upper.toFixed(4)},${bb.lower.toFixed(4)},${bbWidth},${volRatio.toFixed(2)},OPEN,,0.00$,0.00`;
+      await appendCSV(row, csv);
+      await sendTelegram(tgOpen(signal, symbol, formatPrice(symShort, price), formatPrice(symShort, tpPrice), formatPrice(symShort, slPrice)));
 
-    } catch (err) {
-      console.error(`  Error ${symbol}:`, err.message);
+    } catch (e) {
+      console.error(`[${BOT_NAME}] Eroare ${symbol}:`, e.message);
     }
   }
 
-  if (positionsChanged) await savePositions(positions);
-  await pushFileToGitHub(CONFIG.github.csvPath, fs.readFileSync(CONFIG.csvFile, 'utf8'), `trades2.csv update ${new Date().toISOString()}`);
-  console.log(`\n[bot2.js] Run complete: ${new Date().toISOString()}`);
+  if (positionsChanged) {
+    await savePositions(POSITIONS_FILE, positions, posSha);
+  }
+
+  console.log(`\n[${BOT_NAME}] === DONE ${new Date().toISOString()} ===\n`);
 }
 
-run().catch(console.error);
+main().catch(e => { console.error(`[${BOT_NAME}] FATAL:`, e.message); process.exit(1); });
