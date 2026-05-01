@@ -185,20 +185,6 @@ async function placeBitgetTPSL({ symbol, side, entryPrice, qty }) {
   const timestamp = Date.now().toString();
   const path = '/api/v2/mix/order/place-tpsl-order';
 
-  for (const [planType, triggerPrice] of [['profit_plan', tpPrice], ['loss_plan', slPrice]]) {
-    const bodyObj = {
-      symbol:       productId,
-      productType:  'USDT-FUTURES',
-      marginMode:   'crossed',
-      marginCoin:   'USDT',
-      planType,
-      triggerPrice,
-      holdSide,
-      size:         String(qty),   // PC7 FIX: qty real în loc de 0
-    };
-    const bodyStr = JSON.stringify(bodyObj);
-    const sign    = bitgetSign(timestamp, 'POST', path, bodyStr);
-
   let tpOk = false, slOk = false;
 
   for (const [planType, triggerPrice] of [['profit_plan', tpPrice], ['loss_plan', slPrice]]) {
@@ -487,5 +473,3 @@ async function main() {
 }
 
 main().catch(e => { console.error(`[${BOT_NAME}] FATAL:`, e.message); process.exit(1); });
-
-}
