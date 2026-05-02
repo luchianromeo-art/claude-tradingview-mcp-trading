@@ -1,1 +1,23 @@
-{}
+{
+  "_cooldown": {},
+  "SOL/USDT:USDT": {
+    "side": "buy",
+    "entryPrice": 83.602,
+    "qty": 0.1,
+    "tp": 86.11006,
+    "sl": 82.34797,
+    "openTime": 1777722437139,
+    "maxPrice": 83.602,
+    "minPrice": 83.602,
+    "trailingActive": false,
+    "indicators": {
+      "ema20": "83.7891",
+      "ema50": "83.7180",
+      "rsi14": "47.86",
+      "bbUpper": "84.1321",
+      "bbLower": "83.4594",
+      "bbWidth": "0.80",
+      "volRatio": "1.22"
+    }
+  }
+}
