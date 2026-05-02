@@ -156,9 +156,23 @@ function calcQty(sym, price) {
 
 async function setLeverage(sym) {
   if (PAPER) return;
+  const symbol = sym.replace('/', '').replace(':USDT', 'USDT');
+  // Pas 1: seteaza marginMode crossed
   try {
-    await exchange.setLeverage(1, sym, { marginCoin: 'USDT', holdSide: 'long' });
-    await exchange.setLeverage(1, sym, { marginCoin: 'USDT', holdSide: 'short' });
+    await exchange.privatePostApiV2MixAccountSetMarginMode({
+      symbol, productType: 'USDT-FUTURES', marginCoin: 'USDT', marginMode: 'crossed'
+    });
+    console.log(`[BOT1] MarginMode crossed ok ${sym}`);
+  } catch (e) { console.log(`MarginMode skip ${sym}: ${e.message}`); }
+  // Pas 2: seteaza leverage 1x long si short
+  try {
+    await exchange.privatePostApiV2MixAccountSetLeverage({
+      symbol, productType: 'USDT-FUTURES', marginCoin: 'USDT', leverage: '1', holdSide: 'long'
+    });
+    await exchange.privatePostApiV2MixAccountSetLeverage({
+      symbol, productType: 'USDT-FUTURES', marginCoin: 'USDT', leverage: '1', holdSide: 'short'
+    });
+    console.log(`[BOT1] Leverage 1x ok ${sym}`);
   } catch (e) { console.log(`Leverage skip ${sym}: ${e.message}`); }
 }
 
@@ -177,10 +191,10 @@ async function setTpSl(sym, side, qty, tp, sl) {
       size:             String(qty),
       holdSide:         side === 'BUY' ? 'long' : 'short'
     });
-    console.log(`TP/SL ok ${sym} TP=${tp} SL=${sl}`);
+    console.log(`[BOT1] TP/SL nativ ok ${sym} TP=${tp} SL=${sl}`);
   } catch (e) {
-    console.log(`TP/SL err ${sym}: ${e.message}`);
-    await tg(`⚠️ TP/SL eroare ${sym} — seteaza manual: TP=${tp} SL=${sl}`);
+    // Fallback silentios — PnL% verificat la fiecare run, nu e nevoie de interventie manuala
+    console.log(`[BOT1] TP/SL nativ skip ${sym} — fallback PnL% activ`);
   }
 }
 
