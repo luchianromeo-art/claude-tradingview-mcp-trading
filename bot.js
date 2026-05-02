@@ -486,10 +486,12 @@ async function main() {
   // ── Status Telegram la rularea de la ora fixa (:00) ──────────────────────
   const nowMin = new Date().getMinutes();
   if (nowMin < 5) {
-    const openPos = Object.entries(positions).filter(([k]) => k !== '_cooldown');
+    const { data: freshPos } = await loadPositions(POSITIONS_FILE);
+    const openPos = Object.entries(freshPos).filter(([k]) => k !== '_cooldown');
     if (openPos.length > 0) {
       let msg = `📊 Status Bot1 (ora ${new Date().getHours()}:00):\n`;
       for (const [sym, pos] of openPos) {
+        if (!pos || !pos.entryPrice) continue;
         try {
           const symShort  = sym.split('/')[0] + 'USDT';
           const candles   = await exchange.fetchOHLCV(sym, TIMEFRAME, undefined, 2);

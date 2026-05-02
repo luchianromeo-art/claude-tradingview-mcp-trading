@@ -531,6 +531,7 @@ async function main() {
     if (openPos.length > 0) {
       let msg = `📊 Status Bot2 (ora ${new Date().getHours()}:15):\n`;
       for (const [sym, pos] of openPos) {
+        if (!pos || !pos.entryPrice) continue;
         try {
           const symShort  = sym.split('/')[0] + 'USDT';
           const candles   = await exchange.fetchOHLCV(sym, TIMEFRAME, undefined, 2);
