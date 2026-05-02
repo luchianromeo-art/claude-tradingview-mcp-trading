@@ -1,1 +1,1 @@
-Data intrare,Symbol,Semnal,Pret intrare,TP,SL,Size,EMA20,EMA50,RSI14,BB_Upper,BB_Lower,BB_Width,Vol_Ratio,Rezultat,Data iesire,PnL $,PnL %
+timestamp,symbol,signal,price,tp,sl,size_usdt,ema20,ema50,rsi14,bb_upper,bb_lower,bb_width,vol_ratio,result,pnl_pct
