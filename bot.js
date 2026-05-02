@@ -156,23 +156,9 @@ function calcQty(sym, price) {
 
 async function setLeverage(sym) {
   if (PAPER) return;
-  const symbol = sym.replace('/', '').replace(':USDT', 'USDT');
-  // Pas 1: seteaza marginMode crossed
   try {
-    await exchange.privatePostApiV2MixAccountSetMarginMode({
-      symbol, productType: 'USDT-FUTURES', marginCoin: 'USDT', marginMode: 'crossed'
-    });
-    console.log(`[BOT1] MarginMode crossed ok ${sym}`);
-  } catch (e) { console.log(`MarginMode skip ${sym}: ${e.message}`); }
-  // Pas 2: seteaza leverage 1x long si short
-  try {
-    await exchange.privatePostApiV2MixAccountSetLeverage({
-      symbol, productType: 'USDT-FUTURES', marginCoin: 'USDT', leverage: '1', holdSide: 'long'
-    });
-    await exchange.privatePostApiV2MixAccountSetLeverage({
-      symbol, productType: 'USDT-FUTURES', marginCoin: 'USDT', leverage: '1', holdSide: 'short'
-    });
-    console.log(`[BOT1] Leverage 1x ok ${sym}`);
+    await exchange.setLeverage(1, sym, { marginCoin: 'USDT', holdSide: 'long' });
+    await exchange.setLeverage(1, sym, { marginCoin: 'USDT', holdSide: 'short' });
   } catch (e) { console.log(`Leverage skip ${sym}: ${e.message}`); }
 }
 
