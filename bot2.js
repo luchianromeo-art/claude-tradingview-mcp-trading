@@ -1,6 +1,7 @@
 // bot2.js — PC9 | EMA20 + EMA50 + BB + RSI14 + Volume | BitGet USDT-M Futures | Railway
 // Baza: PC7 (API calls, GitHub, structura)
 // Adaugat din PC8: Trailing Stop, Cooldown, Filtru trend 4H SELL, Fix qty Math.floor, setTpSl silentios
+// PC10 fix: Status Telegram citeste fresh din GitHub (toate pozitiile apar)
 
 const ccxt   = require('ccxt');
 const https  = require('https');
@@ -244,7 +245,7 @@ function calcAvgVolume(candles, period = 20) {
 async function getTrend4H(symbol) {
   try {
     const candles4h = await exchange.fetchOHLCV(symbol, TF_4H, undefined, 60);
-    if (candles4h.length < 55) return { bearish: true }; // fallback permisiv
+    if (candles4h.length < 55) return { bearish: true };
     const closes4h  = candles4h.map(c => c[4]);
     const ema20_4h  = calcEMA(closes4h, 20);
     const ema50_4h  = calcEMA(closes4h, 50);
@@ -252,7 +253,7 @@ async function getTrend4H(symbol) {
     return { bearish: ema20_4h < ema50_4h };
   } catch (e) {
     console.log(`[${BOT_NAME}] Trend4H err ${symbol}: ${e.message}`);
-    return { bearish: true }; // fallback permisiv
+    return { bearish: true };
   }
 }
 
@@ -331,7 +332,7 @@ function checkTrailing(symbol, pos, curPrice) {
 
 // ─── MAIN ────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log(`\n[${BOT_NAME}] === PC9 START ${new Date().toISOString()} ===`);
+  console.log(`\n[${BOT_NAME}] === PC10 START ${new Date().toISOString()} ===`);
   console.log(`[${BOT_NAME}] PAPER_TRADING=${PAPER_TRADING} | TRADE_SIZE=${TRADE_SIZE}`);
 
   const csv                               = await loadCSV();
@@ -458,7 +459,6 @@ async function main() {
 
       let condSELL = ema20 < ema50 && price >= bb.upper * 0.99 && rsi14 >= 55 && rsi14 <= 80 && volOk;
       if (condSELL) {
-        // PC8: filtru trend 4H — SELL permis doar daca bearish confirmat
         const trend = await getTrend4H(symbol);
         if (!trend.bearish) {
           console.log(`[${BOT_NAME}] SELL ${symbol} BLOCAT — trend 4H nu e bearish`);
@@ -488,7 +488,6 @@ async function main() {
       console.log(`[${BOT_NAME}] SEMNAL: ${signal} | ${symbol} | qty=${qty} | TP=${tpPrice.toFixed(4)} | SL=${slPrice.toFixed(4)}`);
 
       if (!PAPER_TRADING) {
-        // setLeverage eliminat — setat manual Cross 1x pe BitGet, permanent
         await exchange.createMarketOrder(symbol, side, qty, undefined, {
           tradeSide:  'open',
           marginCoin: 'USDT',
@@ -524,10 +523,15 @@ async function main() {
     }
   }
 
-  // ── Status Telegram la rularea de la :15 ────────────────────────────────
+  if (positionsChanged) {
+    await savePositions(POSITIONS_FILE, positions, posSha);
+  }
+
+  // ── Status Telegram la rularea de la :15 — PC10 FIX: citeste fresh din GitHub ──
   const nowMin = new Date().getMinutes();
   if (nowMin >= 15 && nowMin < 20) {
-    const openPos = Object.entries(positions).filter(([k]) => k !== '_cooldown');
+    const { data: freshPos } = await loadPositions(POSITIONS_FILE);  // PC10 fix
+    const openPos = Object.entries(freshPos).filter(([k]) => k !== '_cooldown');
     if (openPos.length > 0) {
       let msg = `📊 Status Bot2 (ora ${new Date().getHours()}:15):\n`;
       for (const [sym, pos] of openPos) {
@@ -550,9 +554,7 @@ async function main() {
     }
   }
 
-  console.log(`
-[] === DONE ${new Date().toISOString()} ===
-`);
+  console.log(`\n[${BOT_NAME}] === DONE ${new Date().toISOString()} ===\n`);
 }
 
 main().catch(e => { console.error('[Bot2] FATAL:', e.message); process.exit(1); });
