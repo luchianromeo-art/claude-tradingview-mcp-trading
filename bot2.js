@@ -524,11 +524,34 @@ async function main() {
     }
   }
 
-  if (positionsChanged) {
-    await savePositions(POSITIONS_FILE, positions, posSha);
+  // ── Status Telegram la rularea de la :15 ────────────────────────────────
+  const nowMin = new Date().getMinutes();
+  if (nowMin >= 15 && nowMin < 20) {
+    const openPos = Object.entries(positions).filter(([k]) => k !== '_cooldown');
+    if (openPos.length > 0) {
+      let msg = `📊 Status Bot2 (ora ${new Date().getHours()}:15):\n`;
+      for (const [sym, pos] of openPos) {
+        try {
+          const symShort  = sym.split('/')[0] + 'USDT';
+          const candles   = await exchange.fetchOHLCV(sym, TIMEFRAME, undefined, 2);
+          const curPrice  = candles[candles.length - 1][4];
+          const pnlPct    = pos.side === 'buy'
+            ? (curPrice - pos.entryPrice) / pos.entryPrice * 100
+            : (pos.entryPrice - curPrice) / pos.entryPrice * 100;
+          const maxPnlPct = pos.side === 'buy'
+            ? (pos.maxPrice - pos.entryPrice) / pos.entryPrice * 100
+            : (pos.entryPrice - pos.minPrice) / pos.entryPrice * 100;
+          const fromMax   = pnlPct - maxPnlPct;
+          msg += `${pos.side === 'buy' ? '🟢' : '🔴'} ${symShort} ${pos.side.toUpperCase()} @ ${pos.entryPrice} | cur=${curPrice.toFixed(4)} | ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}% (față de max: ${fromMax.toFixed(2)}%)\n`;
+        } catch (e) {}
+      }
+      await sendTelegram(msg.trim());
+    }
   }
 
-  console.log(`\n[${BOT_NAME}] === DONE ${new Date().toISOString()} ===\n`);
+  console.log(`
+[] === DONE ${new Date().toISOString()} ===
+`);
 }
 
-main().catch(e => { console.error(`[${BOT_NAME}] FATAL:`, e.message); process.exit(1); });
+main().catch(e => { console.error('[Bot2] FATAL:', e.message); process.exit(1); });
