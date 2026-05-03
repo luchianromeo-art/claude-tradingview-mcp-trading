@@ -10,5 +10,16 @@
     "maxPrice": 0.1078,
     "minPrice": 0.1078,
     "trailingActive": false
+  },
+  "SOL/USDT:USDT": {
+    "side": "sell",
+    "entryPrice": 83.727,
+    "qty": 0.1,
+    "tp": 82.05246,
+    "sl": 84.56427000000001,
+    "openTime": 1777786314351,
+    "maxPrice": 83.727,
+    "minPrice": 83.727,
+    "trailingActive": false
   }
 }
