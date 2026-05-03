@@ -1,1 +1,14 @@
-{}
+{
+  "_cooldown": {},
+  "DOGE/USDT:USDT": {
+    "side": "sell",
+    "entryPrice": 0.1078,
+    "qty": 92,
+    "tp": 0.105644,
+    "sl": 0.108878,
+    "openTime": 1777780858658,
+    "maxPrice": 0.1078,
+    "minPrice": 0.1078,
+    "trailingActive": false
+  }
+}
