@@ -1,1 +1,25 @@
-{}
+{
+  "_cooldown": {},
+  "ETH/USDT:USDT": {
+    "side": "buy",
+    "entryPrice": 2316.38,
+    "qty": 0.01,
+    "tp": 2362.7076,
+    "sl": 2293.2162000000003,
+    "openTime": 1777766554337,
+    "maxPrice": 2316.38,
+    "minPrice": 2316.38,
+    "trailingActive": false
+  },
+  "SOL/USDT:USDT": {
+    "side": "buy",
+    "entryPrice": 84.271,
+    "qty": 0.1,
+    "tp": 85.95642000000001,
+    "sl": 83.42829,
+    "openTime": 1777766556251,
+    "maxPrice": 84.271,
+    "minPrice": 84.271,
+    "trailingActive": false
+  }
+}
