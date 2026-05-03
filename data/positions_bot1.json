@@ -8,7 +8,7 @@
     "sl": 0.108878,
     "openTime": 1777780858658,
     "maxPrice": 0.1078,
-    "minPrice": 0.1078,
+    "minPrice": 0.10775,
     "trailingActive": false
   },
   "SOL/USDT:USDT": {
@@ -19,7 +19,18 @@
     "sl": 84.56427000000001,
     "openTime": 1777786314351,
     "maxPrice": 83.727,
-    "minPrice": 83.727,
+    "minPrice": 83.661,
+    "trailingActive": false
+  },
+  "ETH/USDT:USDT": {
+    "side": "sell",
+    "entryPrice": 2302.46,
+    "qty": 0.01,
+    "tp": 2256.4108,
+    "sl": 2325.4846000000002,
+    "openTime": 1777788072478,
+    "maxPrice": 2302.46,
+    "minPrice": 2302.46,
     "trailingActive": false
   }
 }
