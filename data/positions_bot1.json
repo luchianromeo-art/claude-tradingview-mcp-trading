@@ -1,26 +1,7 @@
 {
-  "_cooldown": {},
-  "DOGE/USDT:USDT": {
-    "side": "sell",
-    "entryPrice": 0.1078,
-    "qty": 92,
-    "tp": 0.105644,
-    "sl": 0.108878,
-    "openTime": 1777780858658,
-    "maxPrice": 0.1078,
-    "minPrice": 0.10775,
-    "trailingActive": false
-  },
-  "SOL/USDT:USDT": {
-    "side": "sell",
-    "entryPrice": 83.727,
-    "qty": 0.1,
-    "tp": 82.05246,
-    "sl": 84.56427000000001,
-    "openTime": 1777786314351,
-    "maxPrice": 83.727,
-    "minPrice": 83.661,
-    "trailingActive": false
+  "_cooldown": {
+    "SOL/USDT:USDT": 1777806107735,
+    "DOGE/USDT:USDT": 1777806109296
   },
   "ETH/USDT:USDT": {
     "side": "sell",
