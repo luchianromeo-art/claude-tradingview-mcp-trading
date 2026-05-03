@@ -176,7 +176,14 @@ async function closePosition(symbol, side, qty) {
       try {
         const openPos = await exchange.fetchPositions([symbol]);
         const stillOpen = openPos.some(p => p.symbol === symbol && Math.abs(p.contracts) > 0);
-        if (stillOpen) { console.log(`[${BOT_NAME}] 22002 dar pozitia INCA EXISTA pe BitGet — return false`); return false; }
+        if (stillOpen) {
+          console.log(`[${BOT_NAME}] 22002 dar pozitia INCA EXISTA — retry fara reduceOnly`);
+          try {
+            await exchange.createMarketOrder(symbol, side === 'buy' ? 'sell' : 'buy', qty, undefined, { tradeSide: 'close' });
+            console.log(`[${BOT_NAME}] Retry inchidere reusit: ${symbol}`);
+            return true;
+          } catch (e3) { console.error(`[${BOT_NAME}] Retry esuat: ${e3.message}`); return false; }
+        }
       } catch (e2) { console.log(`[${BOT_NAME}] 22002 fetchPositions error: ${e2.message}`); }
       console.log(`[${BOT_NAME}] 22002 — confirmata inchisa`); return true;
     }
