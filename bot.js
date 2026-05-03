@@ -172,7 +172,14 @@ async function closePosition(symbol, side, qty) {
     console.log(`[${BOT_NAME}] Pozitie inchisa: ${symbol}`);
     return true;
   } catch (e) {
-    if (e.message && e.message.includes('22002')) { console.log(`[${BOT_NAME}] 22002 — deja inchisa`); return true; }
+    if (e.message && e.message.includes('22002')) {
+      try {
+        const openPos = await exchange.fetchPositions([symbol]);
+        const stillOpen = openPos.some(p => p.symbol === symbol && Math.abs(p.contracts) > 0);
+        if (stillOpen) { console.log(`[${BOT_NAME}] 22002 dar pozitia INCA EXISTA pe BitGet — return false`); return false; }
+      } catch (e2) { console.log(`[${BOT_NAME}] 22002 fetchPositions error: ${e2.message}`); }
+      console.log(`[${BOT_NAME}] 22002 — confirmata inchisa`); return true;
+    }
     console.error(`[${BOT_NAME}] closePosition error:`, e.message);
     return false;
   }
