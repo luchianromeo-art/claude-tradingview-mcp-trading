@@ -1,7 +1,5 @@
-// bot2.js — PC9 | EMA20 + EMA50 + BB + RSI14 + Volume | BitGet USDT-M Futures | Railway
-// Baza: PC7 (API calls, GitHub, structura)
-// Adaugat din PC8: Trailing Stop, Cooldown, Filtru trend 4H SELL, Fix qty Math.floor, setTpSl silentios
-// PC10 fix: Status Telegram citeste fresh din GitHub (toate pozitiile apar)
+// bot2.js — PC11 | EMA20 + EMA50 + BB + RSI14 + Volume | BitGet USDT-M Futures | Railway
+// PC11: TP 1.2% / SL 0.6% | EXIT_NEGATIVE 3 runuri | TIMEOUT 8h stagnare | positionsChanged la trailing | fix log
 
 const ccxt   = require('ccxt');
 const https  = require('https');
@@ -13,11 +11,15 @@ const TIMEFRAME      = '1h';
 const TF_4H          = '4h';
 const TRADE_SIZE     = parseFloat(process.env.TRADE_SIZE || '10');
 const PAPER_TRADING  = process.env.PAPER_TRADING === 'true';
-const TP_PCT         = 0.03;    // +3%
-const SL_PCT         = 0.015;   // -1.5%
-const TRAIL_ACTIVATE = 0.005;   // +0.5% profit => activeaza trailing
-const TRAIL_STEP     = 0.01;    // -1% fata de maxim => inchide (mai lat decat Bot1)
+const TP_PCT         = 0.012;   // +1.2% PC11
+const SL_PCT         = 0.006;   // -0.6% PC11
+const TRAIL_ACTIVATE = 0.005;   // +0.5% activ
+const TRAIL_STEP     = 0.005;   // -0.5% trail
 const COOLDOWN_MS    = 35 * 60 * 1000;
+const MAX_OPEN_MS    = 8 * 60 * 60 * 1000;
+const NEG_RUNS_LIMIT = 3;
+const STAG_RUNS_LIMIT= 3;
+const STAG_MIN_PCT   = 0.001;
 const VOL_MULTIPLIER = { 'BTC/USDT:USDT': 1.0, 'ETH/USDT:USDT': 1.0, 'SOL/USDT:USDT': 1.2, 'DOGE/USDT:USDT': 1.2 };
 const MIN_QTY        = { 'BTC/USDT:USDT': 0.001, 'ETH/USDT:USDT': 0.01, 'SOL/USDT:USDT': 0.1, 'DOGE/USDT:USDT': 1 };
 const CSV_FILE       = 'data/trades2.csv';
@@ -34,24 +36,15 @@ const exchange = new ccxt.bitget({
   options:  { defaultType: 'swap' },
 });
 
-// ─── GITHUB API (PC7 — https nativ) ──────────────────────────────────────────
+// ─── GITHUB API ───────────────────────────────────────────────────────────────
 async function githubGet(path) {
   return new Promise((resolve, reject) => {
-    const options = {
+    const req = https.request({
       hostname: 'api.github.com',
       path:     `/repos/${GITHUB_REPO}/contents/${path}`,
       method:   'GET',
-      headers: {
-        'Authorization': `token ${process.env.GITHUB_TOKEN}`,
-        'User-Agent':    'trading-bot',
-        'Accept':        'application/vnd.github.v3+json',
-      },
-    };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', d => data += d);
-      res.on('end', () => resolve(JSON.parse(data)));
-    });
+      headers:  { 'Authorization': `token ${process.env.GITHUB_TOKEN}`, 'User-Agent': 'trading-bot', 'Accept': 'application/vnd.github.v3+json' },
+    }, (res) => { let data = ''; res.on('data', d => data += d); res.on('end', () => resolve(JSON.parse(data))); });
     req.on('error', reject);
     req.end();
   });
@@ -59,28 +52,13 @@ async function githubGet(path) {
 
 async function githubPut(path, content, sha) {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
-      message: `${BOT_NAME} update ${path}`,
-      content: Buffer.from(content).toString('base64'),
-      sha:     sha || undefined,
-    });
-    const options = {
+    const body = JSON.stringify({ message: `${BOT_NAME} update ${path}`, content: Buffer.from(content).toString('base64'), sha: sha || undefined });
+    const req = https.request({
       hostname: 'api.github.com',
       path:     `/repos/${GITHUB_REPO}/contents/${path}`,
       method:   'PUT',
-      headers: {
-        'Authorization':  `token ${process.env.GITHUB_TOKEN}`,
-        'User-Agent':     'trading-bot',
-        'Accept':         'application/vnd.github.v3+json',
-        'Content-Type':   'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
-    };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', d => data += d);
-      res.on('end', () => resolve(JSON.parse(data)));
-    });
+      headers:  { 'Authorization': `token ${process.env.GITHUB_TOKEN}`, 'User-Agent': 'trading-bot', 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, (res) => { let data = ''; res.on('data', d => data += d); res.on('end', () => resolve(JSON.parse(data))); });
     req.on('error', reject);
     req.write(body);
     req.end();
@@ -90,10 +68,7 @@ async function githubPut(path, content, sha) {
 async function loadPositions(filename) {
   try {
     const res = await githubGet(filename);
-    if (res.content) {
-      const text = Buffer.from(res.content, 'base64').toString('utf8');
-      return { data: JSON.parse(text), sha: res.sha };
-    }
+    if (res.content) return { data: JSON.parse(Buffer.from(res.content, 'base64').toString('utf8')), sha: res.sha };
   } catch (e) {}
   return { data: {}, sha: null };
 }
@@ -101,117 +76,71 @@ async function loadPositions(filename) {
 async function savePositions(filename, positions, sha) {
   try {
     let freshSha = sha;
-    try {
-      const current = await githubGet(filename);
-      if (current && current.sha) freshSha = current.sha;
-    } catch (e) {}
+    try { const c = await githubGet(filename); if (c && c.sha) freshSha = c.sha; } catch (e) {}
     await githubPut(filename, JSON.stringify(positions, null, 2), freshSha);
-  } catch (e) {
-    console.error(`[${BOT_NAME}] savePositions error:`, e.message);
-  }
+  } catch (e) { console.error(`[${BOT_NAME}] savePositions error:`, e.message); }
 }
 
 async function loadCSV() {
   try {
     const res = await githubGet(CSV_FILE);
-    if (res.content) {
-      return { text: Buffer.from(res.content, 'base64').toString('utf8'), sha: res.sha };
-    }
+    if (res.content) return { text: Buffer.from(res.content, 'base64').toString('utf8'), sha: res.sha };
   } catch (e) {}
   return { text: 'Data intrare,Symbol,Semnal,Pret intrare,TP,SL,Size,EMA20,EMA50,RSI14,BB_Upper,BB_Lower,BB_Width,Vol_Ratio,Rezultat,Data iesire,PnL $,PnL %\n', sha: null };
 }
 
 async function appendCSV(row, existingCSV) {
-  const lines      = existingCSV.text.trim().split('\n');
-  const header     = lines[0];
-  const rest       = lines.slice(1).join('\n');
-  const newContent = header + '\n' + row + (rest ? '\n' + rest : '') + '\n';
+  const lines = existingCSV.text.trim().split('\n');
+  const newContent = lines[0] + '\n' + row + (lines.slice(1).join('\n') ? '\n' + lines.slice(1).join('\n') : '') + '\n';
   let freshSha = existingCSV.sha;
-  try {
-    const current = await githubGet(CSV_FILE);
-    if (current && current.sha) freshSha = current.sha;
-  } catch (e) {}
+  try { const c = await githubGet(CSV_FILE); if (c && c.sha) freshSha = c.sha; } catch (e) {}
   await githubPut(CSV_FILE, newContent, freshSha);
 }
 
 // ─── TELEGRAM ────────────────────────────────────────────────────────────────
 async function sendTelegram(msg) {
-  const token  = process.env.TELEGRAM_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const token = process.env.TELEGRAM_TOKEN, chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
   try {
     const body = JSON.stringify({ chat_id: chatId, text: `🔴 [BOT2] ${msg}` });
     await new Promise((resolve, reject) => {
-      const req = https.request({
-        hostname: 'api.telegram.org',
-        path:     `/bot${token}/sendMessage`,
-        method:   'POST',
-        headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-      }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
-      req.on('error', reject);
-      req.write(body);
-      req.end();
+      const req = https.request({ hostname: 'api.telegram.org', path: `/bot${token}/sendMessage`, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+        (res) => { res.on('data', () => {}); res.on('end', resolve); });
+      req.on('error', reject); req.write(body); req.end();
     });
-  } catch (e) {
-    console.error(`[${BOT_NAME}] Telegram error:`, e.message);
-  }
+  } catch (e) { console.error(`[${BOT_NAME}] Telegram error:`, e.message); }
 }
 
-// ─── BITGET DIRECT API — TP/SL nativ (PC7) ───────────────────────────────────
-function bitgetSign(timestamp, method, requestPath, body = '') {
-  const prehash = timestamp + method.toUpperCase() + requestPath + body;
-  return crypto.createHmac('sha256', process.env.BITGET_SECRET).update(prehash).digest('base64');
+// ─── BITGET TP/SL NATIV ───────────────────────────────────────────────────────
+function bitgetSign(ts, method, path, body = '') {
+  return crypto.createHmac('sha256', process.env.BITGET_SECRET).update(ts + method.toUpperCase() + path + body).digest('base64');
 }
 
 async function placeBitgetTPSL({ symbol, side, entryPrice, qty }) {
-  const tpPrice = side === 'buy'
-    ? (entryPrice * (1 + TP_PCT)).toFixed(2)
-    : (entryPrice * (1 - TP_PCT)).toFixed(2);
-  const slPrice = side === 'buy'
-    ? (entryPrice * (1 - SL_PCT)).toFixed(2)
-    : (entryPrice * (1 + SL_PCT)).toFixed(2);
-
+  const tpPrice = side === 'buy' ? (entryPrice * (1 + TP_PCT)).toFixed(2) : (entryPrice * (1 - TP_PCT)).toFixed(2);
+  const slPrice = side === 'buy' ? (entryPrice * (1 - SL_PCT)).toFixed(2) : (entryPrice * (1 + SL_PCT)).toFixed(2);
   const productId = symbol.replace('/USDT:USDT', 'USDT');
   const holdSide  = side === 'buy' ? 'long' : 'short';
   const path      = '/api/v2/mix/order/place-tpsl-order';
-
   for (const [planType, triggerPrice] of [['profit_plan', tpPrice], ['loss_plan', slPrice]]) {
     try {
-      const timestamp = Date.now().toString();
-      const bodyObj   = { symbol: productId, productType: 'USDT-FUTURES', marginMode: 'crossed', marginCoin: 'USDT', planType, triggerPrice, executePrice: triggerPrice, holdSide, size: String(qty) };
-      const bodyStr   = JSON.stringify(bodyObj);
-      const sign      = bitgetSign(timestamp, 'POST', path, bodyStr);
-
+      const ts = Date.now().toString();
+      const bodyStr = JSON.stringify({ symbol: productId, productType: 'USDT-FUTURES', marginMode: 'crossed', marginCoin: 'USDT', planType, triggerPrice, executePrice: triggerPrice, holdSide, size: String(qty) });
       await new Promise((resolve, reject) => {
-        const req = https.request({
-          hostname: 'api.bitget.com',
-          path,
-          method:  'POST',
-          headers: {
-            'Content-Type':      'application/json',
-            'ACCESS-KEY':        process.env.BITGET_API_KEY,
-            'ACCESS-SIGN':       sign,
-            'ACCESS-TIMESTAMP':  timestamp,
-            'ACCESS-PASSPHRASE': process.env.BITGET_PASSPHRASE,
-            'Content-Length':    Buffer.byteLength(bodyStr),
-          },
-        }, (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(JSON.parse(d))); });
-        req.on('error', reject);
-        req.write(bodyStr);
-        req.end();
+        const req = https.request({ hostname: 'api.bitget.com', path, method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'ACCESS-KEY': process.env.BITGET_API_KEY, 'ACCESS-SIGN': bitgetSign(ts, 'POST', path, bodyStr), 'ACCESS-TIMESTAMP': ts, 'ACCESS-PASSPHRASE': process.env.BITGET_PASSPHRASE, 'Content-Length': Buffer.byteLength(bodyStr) } },
+          (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(JSON.parse(d))); });
+        req.on('error', reject); req.write(bodyStr); req.end();
       });
       console.log(`[${BOT_NAME}] TP/SL nativ ok: ${planType} ${triggerPrice}`);
-    } catch (e) {
-      console.log(`[${BOT_NAME}] TP/SL nativ skip ${planType}: ${e.message}`);
-    }
+    } catch (e) { console.log(`[${BOT_NAME}] TP/SL nativ skip ${planType}: ${e.message}`); }
   }
   return { tpPrice, slPrice };
 }
 
 // ─── INDICATORI ──────────────────────────────────────────────────────────────
 function calcEMA(closes, period) {
-  const k = 2 / (period + 1);
-  let v = closes[0];
+  const k = 2 / (period + 1); let v = closes[0];
   for (let i = 1; i < closes.length; i++) v = closes[i] * k + v * (1 - k);
   return v;
 }
@@ -230,9 +159,8 @@ function calcRSI(closes, period) {
 }
 
 function calcBB(closes, period = 20) {
-  const slice  = closes.slice(-period);
-  const mean   = slice.reduce((a, b) => a + b, 0) / period;
-  const std    = Math.sqrt(slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period);
+  const slice = closes.slice(-period), mean = slice.reduce((a, b) => a + b, 0) / period;
+  const std = Math.sqrt(slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period);
   return { upper: mean + 2 * std, lower: mean - 2 * std, middle: mean };
 }
 
@@ -241,20 +169,15 @@ function calcAvgVolume(candles, period = 20) {
   return vols.reduce((a, b) => a + b, 0) / period;
 }
 
-// ─── FILTRU TREND 4H (PC8) ────────────────────────────────────────────────────
 async function getTrend4H(symbol) {
   try {
-    const candles4h = await exchange.fetchOHLCV(symbol, TF_4H, undefined, 60);
-    if (candles4h.length < 55) return { bearish: true };
-    const closes4h  = candles4h.map(c => c[4]);
-    const ema20_4h  = calcEMA(closes4h, 20);
-    const ema50_4h  = calcEMA(closes4h, 50);
-    console.log(`[${BOT_NAME}] ${symbol} 4H EMA20=${ema20_4h.toFixed(2)} EMA50=${ema50_4h.toFixed(2)} bearish=${ema20_4h < ema50_4h}`);
-    return { bearish: ema20_4h < ema50_4h };
-  } catch (e) {
-    console.log(`[${BOT_NAME}] Trend4H err ${symbol}: ${e.message}`);
-    return { bearish: true };
-  }
+    const c = await exchange.fetchOHLCV(symbol, TF_4H, undefined, 60);
+    if (c.length < 55) return { bearish: true };
+    const cl = c.map(x => x[4]);
+    const e20 = calcEMA(cl, 20), e50 = calcEMA(cl, 50);
+    console.log(`[${BOT_NAME}] ${symbol} 4H EMA20=${e20.toFixed(2)} EMA50=${e50.toFixed(2)} bearish=${e20 < e50}`);
+    return { bearish: e20 < e50 };
+  } catch (e) { return { bearish: true }; }
 }
 
 // ─── UTILITARE ────────────────────────────────────────────────────────────────
@@ -271,68 +194,69 @@ function formatPrice(symbol, price) {
 }
 
 function calcQty(symbol, price) {
-  const min      = MIN_QTY[symbol] || 0.001;
-  const decStr   = String(min).split('.')[1] || '';
-  const decimals = symbol === 'DOGE/USDT:USDT' ? 0 : decStr.length;
-  const factor   = Math.pow(10, decimals);
-  let qty        = Math.floor((TRADE_SIZE / price) * factor) / factor;
+  const min = MIN_QTY[symbol] || 0.001;
+  const decimals = symbol === 'DOGE/USDT:USDT' ? 0 : (String(min).split('.')[1] || '').length;
+  const factor = Math.pow(10, decimals);
+  let qty = Math.floor((TRADE_SIZE / price) * factor) / factor;
   if (qty < min) qty = min;
   return qty;
 }
 
-// ─── LEVERAGE ────────────────────────────────────────────────────────────────
-async function setLeverage(symbol) {
-  try {
-    await exchange.setLeverage(1, symbol, { marginCoin: 'USDT', holdSide: 'long' });
-    await exchange.setLeverage(1, symbol, { marginCoin: 'USDT', holdSide: 'short' });
-  } catch (e) {
-    console.warn(`[${BOT_NAME}] setLeverage warn ${symbol}: ${e.message}`);
-  }
-}
-
-// ─── CLOSE POSITION (PC7) ────────────────────────────────────────────────────
+// ─── CLOSE POSITION ───────────────────────────────────────────────────────────
 async function closePosition(symbol, side, qty) {
-  const closeSide = side === 'buy' ? 'sell' : 'buy';
   try {
-    await exchange.createMarketOrder(symbol, closeSide, qty, undefined, {
-      reduceOnly: true,
-      tradeSide:  'close',
-    });
+    await exchange.createMarketOrder(symbol, side === 'buy' ? 'sell' : 'buy', qty, undefined, { reduceOnly: true, tradeSide: 'close' });
     console.log(`[${BOT_NAME}] Pozitie inchisa: ${symbol} qty=${qty}`);
     return true;
   } catch (e) {
-    if (e.message && e.message.includes('22002')) {
-      console.log(`[${BOT_NAME}] 22002 — pozitie deja inchisa: ${symbol}`);
-      return true;
-    }
+    if (e.message && e.message.includes('22002')) { console.log(`[${BOT_NAME}] 22002 — deja inchisa: ${symbol}`); return true; }
     console.error(`[${BOT_NAME}] closePosition error ${symbol}:`, e.message);
     return false;
   }
 }
 
-// ─── TRAILING STOP (PC8 logica) ───────────────────────────────────────────────
+// ─── TRAILING STOP — returneaza si changed ────────────────────────────────────
 function checkTrailing(symbol, pos, curPrice) {
+  let changed = false;
   if (pos.side === 'buy') {
-    if (curPrice > pos.maxPrice) pos.maxPrice = curPrice;
+    if (curPrice > pos.maxPrice) { pos.maxPrice = curPrice; changed = true; }
     if (!pos.trailingActive && (curPrice - pos.entryPrice) / pos.entryPrice >= TRAIL_ACTIVATE) {
-      pos.trailingActive = true;
+      pos.trailingActive = true; changed = true;
       console.log(`[${BOT_NAME}] Trailing ACTIVAT ${symbol} maxPrice=${pos.maxPrice}`);
     }
-    if (pos.trailingActive && curPrice <= pos.maxPrice * (1 - TRAIL_STEP)) return true;
+    if (pos.trailingActive && curPrice <= pos.maxPrice * (1 - TRAIL_STEP)) return { hit: true, changed };
   } else {
-    if (curPrice < pos.minPrice) pos.minPrice = curPrice;
+    if (curPrice < pos.minPrice) { pos.minPrice = curPrice; changed = true; }
     if (!pos.trailingActive && (pos.entryPrice - curPrice) / pos.entryPrice >= TRAIL_ACTIVATE) {
-      pos.trailingActive = true;
+      pos.trailingActive = true; changed = true;
       console.log(`[${BOT_NAME}] Trailing ACTIVAT ${symbol} minPrice=${pos.minPrice}`);
     }
-    if (pos.trailingActive && curPrice >= pos.minPrice * (1 + TRAIL_STEP)) return true;
+    if (pos.trailingActive && curPrice >= pos.minPrice * (1 + TRAIL_STEP)) return { hit: true, changed };
   }
-  return false;
+  return { hit: false, changed };
+}
+
+// ─── INCHIDERE CU CSV + TELEGRAM ─────────────────────────────────────────────
+async function closeAndRecord(symbol, pos, curPrice, reason, csv) {
+  const symShort = symbol.split('/')[0] + 'USDT';
+  const pnlPct = pos.side === 'buy'
+    ? (curPrice - pos.entryPrice) / pos.entryPrice
+    : (pos.entryPrice - curPrice) / pos.entryPrice;
+  const pnlUsd = (pnlPct * TRADE_SIZE).toFixed(2);
+  const closed = PAPER_TRADING ? true : await closePosition(symbol, pos.side, pos.qty);
+  if (closed) {
+    const ind = pos.indicators || {};
+    const row = `${formatDate(new Date())},${symShort},${reason},${formatPrice(symbol, pos.entryPrice)},${formatPrice(symbol, pos.tp)},${formatPrice(symbol, pos.sl)},${TRADE_SIZE}$,${ind.ema20||''},${ind.ema50||''},${ind.rsi14||''},${ind.bbUpper||''},${ind.bbLower||''},${ind.bbWidth||''},${ind.volRatio||''},${reason},${formatDate(new Date())},${pnlUsd}$,${(pnlPct*100).toFixed(2)}%`;
+    await appendCSV(row, csv);
+    const emoji = reason === 'TP_HIT' ? '✅' : reason === 'TRAIL_STOP' ? '🔒' : reason === 'EXIT_NEGATIVE' ? '🚫' : reason === 'TIMEOUT' ? '⏱' : '❌';
+    await sendTelegram(`${emoji} ${reason} ${symShort} | ${pnlUsd}$ (${(pnlPct*100).toFixed(2)}%)`);
+  }
+  return closed;
 }
 
 // ─── MAIN ────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log(`\n[${BOT_NAME}] === PC10 START ${new Date().toISOString()} ===`);
+  console.log(`\n[${BOT_NAME}] === PC11 START ${new Date().toISOString()} ===`);
   console.log(`[${BOT_NAME}] PAPER_TRADING=${PAPER_TRADING} | TRADE_SIZE=${TRADE_SIZE}`);
 
   const csv                               = await loadCSV();
@@ -343,211 +267,180 @@ async function main() {
 
   for (const symbol of SYMBOLS) {
     try {
-      console.log(`\n[${BOT_NAME}] --- ${symbol} ---`);
       const symShort = symbol.split('/')[0] + 'USDT';
+      console.log(`\n[${BOT_NAME}] --- ${symShort} ---`);
 
-      // ── 1. Fetch candles ─────────────────────────────────────────────────
       const candles  = await exchange.fetchOHLCV(symbol, TIMEFRAME, undefined, 60);
-      if (candles.length < 50) { console.log(`[${BOT_NAME}] Date insuficiente ${symbol}`); continue; }
+      if (candles.length < 50) { console.log(`[${BOT_NAME}] Date insuficiente`); continue; }
       const closes   = candles.map(c => c[4]);
       const curPrice = closes[closes.length - 1];
 
-      // ── 2. Gestioneaza pozitie existenta ────────────────────────────────
       if (positions[symbol]) {
         const pos = positions[symbol];
 
-        // PC7: verifica daca BitGet a inchis nativ
+        // Verifica inchidere nativa BitGet
         if (!PAPER_TRADING) {
           try {
             const openPos   = await exchange.fetchPositions([symbol]);
             const stillOpen = openPos.some(p => p.symbol === symbol && Math.abs(p.contracts) > 0);
             if (!stillOpen) {
-              const pnlPct = pos.side === 'buy'
-                ? (curPrice - pos.entryPrice) / pos.entryPrice
-                : (pos.entryPrice - curPrice) / pos.entryPrice;
-              const result = pnlPct >= 0 ? 'TP_HIT' : 'SL_HIT';
-              const pnlUsd = (pnlPct * TRADE_SIZE).toFixed(2);
-              const ind    = pos.indicators || {};
-              const row    = `${formatDate(new Date())},${symShort},${result},${formatPrice(symShort, pos.entryPrice)},${formatPrice(symShort, pos.tp)},${formatPrice(symShort, pos.sl)},${TRADE_SIZE}$,${ind.ema20||''},${ind.ema50||''},${ind.rsi14||''},${ind.bbUpper||''},${ind.bbLower||''},${ind.bbWidth||''},${ind.volRatio||''},${result},${formatDate(new Date())},${pnlUsd}$,${(pnlPct*100).toFixed(2)}%`;
-              await appendCSV(row, csv);
-              await sendTelegram(`${result === 'TP_HIT' ? '✅' : '❌'} ${result} ${symShort} | ${pnlUsd}$ (${(pnlPct*100).toFixed(2)}%)`);
-              delete positions[symbol];
-              positions._cooldown[symbol] = Date.now();
-              positionsChanged = true;
+              await closeAndRecord(symbol, pos, curPrice, curPrice >= pos.entryPrice ? 'TP_HIT' : 'SL_HIT', csv);
+              delete positions[symbol]; positions._cooldown[symbol] = Date.now(); positionsChanged = true;
               continue;
             }
-          } catch (e) {
-            console.warn(`[${BOT_NAME}] fetchPositions warn ${symbol}: ${e.message}`);
-          }
+          } catch (e) { console.warn(`[${BOT_NAME}] fetchPositions warn: ${e.message}`); }
         }
 
-        // PC8: Trailing Stop
-        const trailHit = checkTrailing(symbol, pos, curPrice);
+        // Trailing Stop
+        const { hit: trailHit, changed: trailChanged } = checkTrailing(symbol, pos, curPrice);
+        if (trailChanged) positionsChanged = true;
         if (trailHit) {
-          const pnlPct = pos.side === 'buy'
-            ? (curPrice - pos.entryPrice) / pos.entryPrice
-            : (pos.entryPrice - curPrice) / pos.entryPrice;
-          const pnlUsd = (pnlPct * TRADE_SIZE).toFixed(2);
-          const closed = PAPER_TRADING ? true : await closePosition(symbol, pos.side, pos.qty);
-          if (closed) {
-            const ind = pos.indicators || {};
-            const row = `${formatDate(new Date())},${symShort},TRAIL_STOP,${formatPrice(symShort, pos.entryPrice)},${formatPrice(symShort, pos.tp)},${formatPrice(symShort, pos.sl)},${TRADE_SIZE}$,${ind.ema20||''},${ind.ema50||''},${ind.rsi14||''},${ind.bbUpper||''},${ind.bbLower||''},${ind.bbWidth||''},${ind.volRatio||''},TRAIL_STOP,${formatDate(new Date())},${pnlUsd}$,${(pnlPct*100).toFixed(2)}%`;
-            await appendCSV(row, csv);
-            await sendTelegram(`🔒 TRAIL_STOP ${symShort} | ${pnlUsd}$ (${(pnlPct*100).toFixed(2)}%)`);
-            delete positions[symbol];
-            positions._cooldown[symbol] = Date.now();
-            positionsChanged = true;
-          }
+          const closed = await closeAndRecord(symbol, pos, curPrice, 'TRAIL_STOP', csv);
+          if (closed) { delete positions[symbol]; positions._cooldown[symbol] = Date.now(); positionsChanged = true; }
           continue;
         }
 
-        // Fallback TP/SL prin PnL%
+        // PnL curent
         const pnlPct = pos.side === 'buy'
           ? (curPrice - pos.entryPrice) / pos.entryPrice
           : (pos.entryPrice - curPrice) / pos.entryPrice;
 
-        console.log(`[${BOT_NAME}] Pozitie: ${symbol} ${pos.side.toUpperCase()} entry=${pos.entryPrice} cur=${curPrice} pnl=${(pnlPct*100).toFixed(2)}% trailing=${pos.trailingActive}`);
+        console.log(`[${BOT_NAME}] Pozitie: ${symShort} ${pos.side.toUpperCase()} entry=${pos.entryPrice} cur=${curPrice} pnl=${(pnlPct*100).toFixed(2)}% trailing=${pos.trailingActive} negRuns=${pos.negativeRuns||0} stagRuns=${pos.stagnantRuns||0}`);
 
-        let result = null;
-        if (pnlPct >= TP_PCT)  result = 'TP_HIT';
-        if (pnlPct <= -SL_PCT) result = 'SL_HIT';
+        // TP/SL fallback
+        if (pnlPct >= TP_PCT) {
+          const closed = await closeAndRecord(symbol, pos, curPrice, 'TP_HIT', csv);
+          if (closed) { delete positions[symbol]; positions._cooldown[symbol] = Date.now(); positionsChanged = true; }
+          continue;
+        }
+        if (pnlPct <= -SL_PCT) {
+          const closed = await closeAndRecord(symbol, pos, curPrice, 'SL_HIT', csv);
+          if (closed) { delete positions[symbol]; positions._cooldown[symbol] = Date.now(); positionsChanged = true; }
+          continue;
+        }
 
-        if (result) {
-          const pnlUsd = (pnlPct * TRADE_SIZE).toFixed(2);
-          const closed = PAPER_TRADING ? true : await closePosition(symbol, pos.side, pos.qty);
-          if (closed) {
-            const ind = pos.indicators || {};
-            const row = `${formatDate(new Date())},${symShort},${result},${formatPrice(symShort, pos.entryPrice)},${formatPrice(symShort, pos.tp)},${formatPrice(symShort, pos.sl)},${TRADE_SIZE}$,${ind.ema20||''},${ind.ema50||''},${ind.rsi14||''},${ind.bbUpper||''},${ind.bbLower||''},${ind.bbWidth||''},${ind.volRatio||''},${result},${formatDate(new Date())},${pnlUsd}$,${(pnlPct*100).toFixed(2)}%`;
-            await appendCSV(row, csv);
-            await sendTelegram(`${result === 'TP_HIT' ? '✅' : '❌'} ${result} ${symShort} | ${pnlUsd}$ (${(pnlPct*100).toFixed(2)}%)`);
-            delete positions[symbol];
-            positions._cooldown[symbol] = Date.now();
+        // EXIT_NEGATIVE — 3 runuri consecutive negative
+        if (pnlPct < 0) {
+          pos.negativeRuns = (pos.negativeRuns || 0) + 1;
+          pos.stagnantRuns = 0;
+          positionsChanged = true;
+          console.log(`[${BOT_NAME}] negativeRuns=${pos.negativeRuns}/${NEG_RUNS_LIMIT}`);
+          if (pos.negativeRuns >= NEG_RUNS_LIMIT) {
+            const closed = await closeAndRecord(symbol, pos, curPrice, 'EXIT_NEGATIVE', csv);
+            if (closed) { delete positions[symbol]; positions._cooldown[symbol] = Date.now(); positionsChanged = true; }
+            continue;
+          }
+        } else {
+          if ((pos.negativeRuns || 0) > 0) { pos.negativeRuns = 0; positionsChanged = true; }
+        }
+
+        // TIMEOUT STAGNARE — dupa 8h
+        const openMs = Date.now() - pos.openTime;
+        if (openMs >= MAX_OPEN_MS) {
+          const lastPnl  = pos.lastPnl || 0;
+          const progress = Math.abs(pnlPct - lastPnl);
+          if (progress < STAG_MIN_PCT) {
+            pos.stagnantRuns = (pos.stagnantRuns || 0) + 1;
             positionsChanged = true;
+            console.log(`[${BOT_NAME}] stagnantRuns=${pos.stagnantRuns}/${STAG_RUNS_LIMIT}`);
+            if (pos.stagnantRuns >= STAG_RUNS_LIMIT) {
+              const closed = await closeAndRecord(symbol, pos, curPrice, 'TIMEOUT', csv);
+              if (closed) { delete positions[symbol]; positions._cooldown[symbol] = Date.now(); positionsChanged = true; }
+              continue;
+            }
+          } else {
+            if ((pos.stagnantRuns || 0) > 0) { pos.stagnantRuns = 0; positionsChanged = true; }
           }
         }
+
+        pos.lastPnl = pnlPct;
+        positionsChanged = true;
         continue;
       }
 
-      // ── 3. Cooldown check (PC8) ──────────────────────────────────────────
+      // Cooldown
       if (positions._cooldown[symbol]) {
         const elapsed = Date.now() - positions._cooldown[symbol];
-        if (elapsed < COOLDOWN_MS) {
-          console.log(`[${BOT_NAME}] Cooldown activ ${symbol} — ${Math.round((COOLDOWN_MS - elapsed) / 60000)} min ramasi`);
-          continue;
-        }
+        if (elapsed < COOLDOWN_MS) { console.log(`[${BOT_NAME}] Cooldown ${symShort} — ${Math.round((COOLDOWN_MS-elapsed)/60000)} min`); continue; }
         delete positions._cooldown[symbol];
       }
 
-      // ── 4. Calculeaza indicatori ─────────────────────────────────────────
-      const ema20    = calcEMA(closes, 20);
-      const ema50    = calcEMA(closes, 50);
+      // Indicatori
+      const ema20    = calcEMA(closes, 20), ema50 = calcEMA(closes, 50);
       const rsi14    = calcRSI(closes, 14);
       const bb       = calcBB(closes, 20);
       const curVol   = candles[candles.length - 1][5];
       const avgVol   = calcAvgVolume(candles, 20);
       const volRatio = avgVol > 0 ? curVol / avgVol : 0;
-      const price    = curPrice;
       const volMin   = VOL_MULTIPLIER[symbol];
       const bbWidth  = ((bb.upper - bb.lower) / bb.middle * 100).toFixed(2);
 
-      console.log(`[${BOT_NAME}] ${symbol} | Price=${price.toFixed(4)} EMA20=${ema20.toFixed(4)} EMA50=${ema50.toFixed(4)} RSI14=${rsi14.toFixed(1)} BB_L=${bb.lower.toFixed(4)} BB_U=${bb.upper.toFixed(4)} Vol=${volRatio.toFixed(2)}x (prag ${volMin}x)`);
+      console.log(`[${BOT_NAME}] ${symShort} | Price=${curPrice.toFixed(4)} EMA20=${ema20.toFixed(4)} EMA50=${ema50.toFixed(4)} RSI14=${rsi14.toFixed(1)} Vol=${volRatio.toFixed(2)}x (prag ${volMin}x)`);
 
       const volOk = volRatio >= volMin;
       let signal  = null;
+      if (ema20 > ema50 && curPrice <= bb.lower * 1.01 && rsi14 >= 30 && rsi14 <= 55 && volOk) signal = 'BUY';
 
-      if (ema20 > ema50 && price <= bb.lower * 1.01 && rsi14 >= 30 && rsi14 <= 55 && volOk) signal = 'BUY';
-
-      let condSELL = ema20 < ema50 && price >= bb.upper * 0.99 && rsi14 >= 55 && rsi14 <= 80 && volOk;
+      let condSELL = ema20 < ema50 && curPrice >= bb.upper * 0.99 && rsi14 >= 55 && rsi14 <= 80 && volOk;
       if (condSELL) {
         const trend = await getTrend4H(symbol);
-        if (!trend.bearish) {
-          console.log(`[${BOT_NAME}] SELL ${symbol} BLOCAT — trend 4H nu e bearish`);
-          condSELL = false;
-        }
+        if (!trend.bearish) { console.log(`[${BOT_NAME}] SELL ${symShort} BLOCAT — 4H nu e bearish`); condSELL = false; }
       }
       if (condSELL) signal = 'SELL';
-
       if (!signal) { console.log(`[${BOT_NAME}] HOLD — no signal (volOk=${volOk} ratio=${volRatio.toFixed(2)}x)`); continue; }
 
-      // ── 5. Conflict cross-bot ────────────────────────────────────────────
-      if (otherPositions[symbol]) {
-        const otherSide = otherPositions[symbol].side;
-        const thisSide  = signal === 'BUY' ? 'buy' : 'sell';
-        if (otherSide === thisSide) {
-          console.log(`[${BOT_NAME}] BLOCAT — Bot1 are deja ${otherSide} pe ${symbol}`);
-          continue;
-        }
+      // Conflict cross-bot — aceeasi directie blocata
+      const thisSide = signal === 'BUY' ? 'buy' : 'sell';
+      if (otherPositions[symbol] && otherPositions[symbol].side === thisSide) {
+        console.log(`[${BOT_NAME}] BLOCAT — Bot1 are deja ${thisSide} pe ${symShort}`); continue;
       }
 
-      // ── 6. Calculeaza qty si preturi ─────────────────────────────────────
       const side    = signal === 'BUY' ? 'buy' : 'sell';
-      const qty     = calcQty(symbol, price);
-      const tpPrice = side === 'buy' ? price * (1 + TP_PCT) : price * (1 - TP_PCT);
-      const slPrice = side === 'buy' ? price * (1 - SL_PCT) : price * (1 + SL_PCT);
+      const qty     = calcQty(symbol, curPrice);
+      const tpPrice = side === 'buy' ? curPrice * (1 + TP_PCT) : curPrice * (1 - TP_PCT);
+      const slPrice = side === 'buy' ? curPrice * (1 - SL_PCT) : curPrice * (1 + SL_PCT);
 
-      console.log(`[${BOT_NAME}] SEMNAL: ${signal} | ${symbol} | qty=${qty} | TP=${tpPrice.toFixed(4)} | SL=${slPrice.toFixed(4)}`);
+      console.log(`[${BOT_NAME}] SEMNAL: ${signal} | ${symShort} | qty=${qty} | TP=${tpPrice.toFixed(4)} | SL=${slPrice.toFixed(4)}`);
 
       if (!PAPER_TRADING) {
-        await exchange.createMarketOrder(symbol, side, qty, undefined, {
-          tradeSide:  'open',
-          marginCoin: 'USDT',
-        });
-        await placeBitgetTPSL({ symbol, side, entryPrice: price, qty });
+        await exchange.createMarketOrder(symbol, side, qty, undefined, { tradeSide: 'open', marginCoin: 'USDT' });
+        await placeBitgetTPSL({ symbol, side, entryPrice: curPrice, qty });
       }
 
-      // ── 7. Salveaza pozitia ──────────────────────────────────────────────
-      const indicators = {
-        ema20:    ema20.toFixed(4),
-        ema50:    ema50.toFixed(4),
-        rsi14:    rsi14.toFixed(2),
-        bbUpper:  bb.upper.toFixed(4),
-        bbLower:  bb.lower.toFixed(4),
-        bbWidth,
-        volRatio: volRatio.toFixed(2),
-      };
       positions[symbol] = {
-        side, entryPrice: price, qty, tp: tpPrice, sl: slPrice,
+        side, entryPrice: curPrice, qty, tp: tpPrice, sl: slPrice,
         openTime: Date.now(),
-        maxPrice: price, minPrice: price, trailingActive: false,
-        indicators,
+        maxPrice: curPrice, minPrice: curPrice, trailingActive: false,
+        negativeRuns: 0, stagnantRuns: 0, lastPnl: 0,
+        indicators: { ema20: ema20.toFixed(4), ema50: ema50.toFixed(4), rsi14: rsi14.toFixed(2), bbUpper: bb.upper.toFixed(4), bbLower: bb.lower.toFixed(4), bbWidth, volRatio: volRatio.toFixed(2) },
       };
       positionsChanged = true;
 
-      // ── 8. Salveaza in CSV ───────────────────────────────────────────────
-      const row = `${formatDate(new Date())},${symShort},${signal},${formatPrice(symShort, price)},${formatPrice(symShort, tpPrice)},${formatPrice(symShort, slPrice)},${TRADE_SIZE}$,${ema20.toFixed(4)},${ema50.toFixed(4)},${rsi14.toFixed(2)},${bb.upper.toFixed(4)},${bb.lower.toFixed(4)},${bbWidth},${volRatio.toFixed(2)},OPEN,,0.00$,0.00%`;
+      const row = `${formatDate(new Date())},${symShort},${signal},${formatPrice(symbol, curPrice)},${formatPrice(symbol, tpPrice)},${formatPrice(symbol, slPrice)},${TRADE_SIZE}$,${ema20.toFixed(4)},${ema50.toFixed(4)},${rsi14.toFixed(2)},${bb.upper.toFixed(4)},${bb.lower.toFixed(4)},${bbWidth},${volRatio.toFixed(2)},OPEN,,0.00$,0.00%`;
       await appendCSV(row, csv);
-      await sendTelegram(`${signal === 'BUY' ? '🟢' : '🔴'} ${signal} ${symShort} @ ${formatPrice(symShort, price)} | TP=${formatPrice(symShort, tpPrice)} SL=${formatPrice(symShort, slPrice)} | ${PAPER_TRADING ? 'PAPER' : 'REAL'}`);
+      await sendTelegram(`${signal === 'BUY' ? '🟢' : '🔴'} ${signal} ${symShort} @ ${formatPrice(symbol, curPrice)} | TP=${formatPrice(symbol, tpPrice)} SL=${formatPrice(symbol, slPrice)} | ${PAPER_TRADING ? 'PAPER' : 'REAL'}`);
 
-    } catch (e) {
-      console.error(`[${BOT_NAME}] Eroare ${symbol}:`, e.message);
-    }
+    } catch (e) { console.error(`[${BOT_NAME}] Eroare ${symbol}:`, e.message); }
   }
 
-  if (positionsChanged) {
-    await savePositions(POSITIONS_FILE, positions, posSha);
-  }
+  if (positionsChanged) await savePositions(POSITIONS_FILE, positions, posSha);
 
-  // ── Status Telegram la rularea de la :15 — PC10 FIX: citeste fresh din GitHub ──
+  // Status Telegram la :15 — fresh din GitHub
   const nowMin = new Date().getMinutes();
-  if (nowMin >= 15 && nowMin < 20) {
-    const { data: freshPos } = await loadPositions(POSITIONS_FILE);  // PC10 fix
+  if (nowMin >= 15 && nowMin < 25) {
+    const { data: freshPos } = await loadPositions(POSITIONS_FILE);
     const openPos = Object.entries(freshPos).filter(([k]) => k !== '_cooldown');
     if (openPos.length > 0) {
       let msg = `📊 Status Bot2 (ora ${new Date().getHours()}:15):\n`;
       for (const [sym, pos] of openPos) {
         if (!pos || !pos.entryPrice) continue;
         try {
-          const symShort  = sym.split('/')[0] + 'USDT';
-          const candles   = await exchange.fetchOHLCV(sym, TIMEFRAME, undefined, 2);
-          const curPrice  = candles[candles.length - 1][4];
-          const pnlPct    = pos.side === 'buy'
-            ? (curPrice - pos.entryPrice) / pos.entryPrice * 100
-            : (pos.entryPrice - curPrice) / pos.entryPrice * 100;
-          const maxPnlPct = pos.side === 'buy'
-            ? (pos.maxPrice - pos.entryPrice) / pos.entryPrice * 100
-            : (pos.entryPrice - pos.minPrice) / pos.entryPrice * 100;
-          const fromMax   = pnlPct - maxPnlPct;
-          msg += `${pos.side === 'buy' ? '🟢' : '🔴'} ${symShort} ${pos.side.toUpperCase()} @ ${pos.entryPrice} | cur=${curPrice.toFixed(4)} | ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}% (față de max: ${fromMax.toFixed(2)}%)\n`;
+          const symShort = sym.split('/')[0] + 'USDT';
+          const c = await exchange.fetchOHLCV(sym, TIMEFRAME, undefined, 2);
+          const cur = c[c.length - 1][4];
+          const pnl = pos.side === 'buy' ? (cur - pos.entryPrice) / pos.entryPrice * 100 : (pos.entryPrice - cur) / pos.entryPrice * 100;
+          const maxPnl = pos.side === 'buy' ? (pos.maxPrice - pos.entryPrice) / pos.entryPrice * 100 : (pos.entryPrice - pos.minPrice) / pos.entryPrice * 100;
+          msg += `${pos.side === 'buy' ? '🟢' : '🔴'} ${symShort} ${pos.side.toUpperCase()} @ ${pos.entryPrice} | cur=${cur.toFixed(4)} | ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}% (max: ${fromMax(pnl, maxPnl).toFixed(2)}%) negRuns=${pos.negativeRuns||0}\n`;
         } catch (e) {}
       }
       await sendTelegram(msg.trim());
@@ -556,5 +449,7 @@ async function main() {
 
   console.log(`\n[${BOT_NAME}] === DONE ${new Date().toISOString()} ===\n`);
 }
+
+function fromMax(pnl, maxPnl) { return Math.min(0, pnl - maxPnl); }
 
 main().catch(e => { console.error('[Bot2] FATAL:', e.message); process.exit(1); });
