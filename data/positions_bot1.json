@@ -1,3 +1,31 @@
 {
-  "_cooldown": {}
+  "_cooldown": {},
+  "BTC/USDT:USDT": {
+    "side": "buy",
+    "entryPrice": 79941.7,
+    "qty": 0.001,
+    "tp": 80581.23359999999,
+    "sl": 79541.9915,
+    "openTime": 1777872662861,
+    "maxPrice": 79941.7,
+    "minPrice": 79941.7,
+    "trailingActive": false,
+    "negativeRuns": 0,
+    "stagnantRuns": 0,
+    "lastPnl": 0
+  },
+  "DOGE/USDT:USDT": {
+    "side": "buy",
+    "entryPrice": 0.11247,
+    "qty": 88,
+    "tp": 0.11336976,
+    "sl": 0.11190765,
+    "openTime": 1777872665166,
+    "maxPrice": 0.11247,
+    "minPrice": 0.11247,
+    "trailingActive": false,
+    "negativeRuns": 0,
+    "stagnantRuns": 0,
+    "lastPnl": 0
+  }
 }
