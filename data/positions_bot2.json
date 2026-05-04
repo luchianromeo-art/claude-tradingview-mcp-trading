@@ -1,6 +1,5 @@
 {
   "_cooldown": {
-    "DOGE/USDT:USDT": 1777859154801,
     "ETH/USDT:USDT": 1777860918415,
     "SOL/USDT:USDT": 1777860920458
   },
@@ -11,7 +10,7 @@
     "tp": 79431.1716,
     "sl": 78018.3642,
     "openTime": 1777851959697,
-    "maxPrice": 79897,
+    "maxPrice": 80131.9,
     "minPrice": 78489.3,
     "trailingActive": true,
     "negativeRuns": 0,
