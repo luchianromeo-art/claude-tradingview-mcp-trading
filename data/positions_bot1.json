@@ -7,12 +7,12 @@
     "tp": 80581.23359999999,
     "sl": 79541.9915,
     "openTime": 1777872662861,
-    "maxPrice": 79941.7,
+    "maxPrice": 79954.8,
     "minPrice": 79941.7,
     "trailingActive": false,
     "negativeRuns": 0,
     "stagnantRuns": 0,
-    "lastPnl": 0
+    "lastPnl": 0.000163869419839781
   },
   "DOGE/USDT:USDT": {
     "side": "buy",
@@ -23,6 +23,20 @@
     "openTime": 1777872665166,
     "maxPrice": 0.11247,
     "minPrice": 0.11247,
+    "trailingActive": false,
+    "negativeRuns": 1,
+    "stagnantRuns": 0,
+    "lastPnl": -0.00026673779674581886
+  },
+  "ETH/USDT:USDT": {
+    "side": "buy",
+    "entryPrice": 2373.98,
+    "qty": 0.01,
+    "tp": 2392.97184,
+    "sl": 2362.1101,
+    "openTime": 1777874548664,
+    "maxPrice": 2373.98,
+    "minPrice": 2373.98,
     "trailingActive": false,
     "negativeRuns": 0,
     "stagnantRuns": 0,
