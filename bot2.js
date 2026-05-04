@@ -84,7 +84,6 @@ async function loadPositions(filename) {
   console.log(`[${BOT_NAME}] loadPositions FALLBACK la {} dupa 3 incercari`);
   return { data: {}, sha: null };
 }
-}
 
 async function savePositions(filename, positions, sha) {
   try {
