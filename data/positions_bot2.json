@@ -1,6 +1,8 @@
 {
   "_cooldown": {
-    "DOGE/USDT:USDT": 1777859154801
+    "DOGE/USDT:USDT": 1777859154801,
+    "ETH/USDT:USDT": 1777860918415,
+    "SOL/USDT:USDT": 1777860920458
   },
   "BTC/USDT:USDT": {
     "side": "buy",
@@ -9,9 +11,9 @@
     "tp": 79431.1716,
     "sl": 78018.3642,
     "openTime": 1777851959697,
-    "maxPrice": 78803.7,
+    "maxPrice": 79897,
     "minPrice": 78489.3,
-    "trailingActive": false,
+    "trailingActive": true,
     "negativeRuns": 0,
     "stagnantRuns": 0,
     "lastPnl": 0.004005641533304466,
@@ -23,52 +25,6 @@
       "bbLower": "78090.6827",
       "bbWidth": "1.23",
       "volRatio": "1.75"
-    }
-  },
-  "ETH/USDT:USDT": {
-    "side": "buy",
-    "entryPrice": 2314.05,
-    "qty": 0.01,
-    "tp": 2341.8186,
-    "sl": 2300.1657,
-    "openTime": 1777855594852,
-    "maxPrice": 2327.56,
-    "minPrice": 2314.05,
-    "trailingActive": true,
-    "negativeRuns": 0,
-    "stagnantRuns": 0,
-    "lastPnl": 0.00583824895745544,
-    "indicators": {
-      "ema20": "2321.9560",
-      "ema50": "2315.9981",
-      "rsi14": "51.91",
-      "bbUpper": "2341.8412",
-      "bbLower": "2300.0318",
-      "bbWidth": "1.80",
-      "volRatio": "1.48"
-    }
-  },
-  "SOL/USDT:USDT": {
-    "side": "buy",
-    "entryPrice": 84.038,
-    "qty": 0.1,
-    "tp": 85.04645599999999,
-    "sl": 83.533772,
-    "openTime": 1777859151708,
-    "maxPrice": 84.038,
-    "minPrice": 84.038,
-    "trailingActive": false,
-    "negativeRuns": 0,
-    "stagnantRuns": 0,
-    "lastPnl": 0,
-    "indicators": {
-      "ema20": "84.0647",
-      "ema50": "84.0231",
-      "rsi14": "52.52",
-      "bbUpper": "84.5071",
-      "bbLower": "83.5937",
-      "bbWidth": "1.09",
-      "volRatio": "2.30"
     }
   }
 }
