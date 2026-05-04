@@ -183,23 +183,22 @@ function calcQty(symbol, price) {
 
 async function closePosition(symbol, side, qty) {
   try { await exchange.cancelAllOrders(symbol); console.log(`[${BOT_NAME}] cancelAllOrders ok: ${symbol}`); } catch (ec) { console.log(`[${BOT_NAME}] cancelAllOrders skip: ${ec.message}`); }
+  const sym = symbol.replace('/USDT:USDT', 'USDT');
   try {
-    await exchange.createMarketOrder(symbol, side === 'buy' ? 'sell' : 'buy', qty, undefined, { tradeSide: 'close' });
-    console.log(`[${BOT_NAME}] Pozitie inchisa: ${symbol}`);
+    await exchange.privatePostApiV2MixOrderPlaceOrder({
+      symbol: sym,
+      productType: 'USDT-FUTURES',
+      marginMode: 'crossed',
+      marginCoin: 'USDT',
+      side: side === 'buy' ? 'sell' : 'buy',
+      tradeSide: 'close',
+      orderType: 'market',
+      size: String(qty),
+    });
+    console.log(`[${BOT_NAME}] Pozitie inchisa (native): ${symbol}`);
     return true;
   } catch (e) {
-    if (e.message && e.message.includes('22002')) {
-      console.log(`[${BOT_NAME}] 22002 — retry direct fara reduceOnly`);
-      try {
-        await exchange.createMarketOrder(symbol, side === 'buy' ? 'sell' : 'buy', qty, undefined, { tradeSide: 'close' });
-        console.log(`[${BOT_NAME}] Retry reusit: ${symbol}`);
-        return true;
-      } catch (e2) {
-        console.log(`[${BOT_NAME}] Retry esuat (${e2.message}) — tratata ca inchisa`);
-        return true;
-      }
-    }
-    console.error(`[${BOT_NAME}] closePosition error:`, e.message);
+    console.error(`[${BOT_NAME}] closePosition error: ${e.message}`);
     return false;
   }
 }
