@@ -1,8 +1,5 @@
 {
-  "_cooldown": {
-    "ETH/USDT:USDT": 1777860918415,
-    "SOL/USDT:USDT": 1777860920458
-  },
+  "_cooldown": {},
   "BTC/USDT:USDT": {
     "side": "buy",
     "entryPrice": 78489.3,
@@ -10,7 +7,7 @@
     "tp": 79431.1716,
     "sl": 78018.3642,
     "openTime": 1777851959697,
-    "maxPrice": 80131.9,
+    "maxPrice": 80228,
     "minPrice": 78489.3,
     "trailingActive": true,
     "negativeRuns": 0,
