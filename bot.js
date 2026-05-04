@@ -184,11 +184,7 @@ function calcQty(symbol, price) {
 async function closePosition(symbol, side, qty) {
   try { await exchange.cancelAllOrders(symbol); console.log(`[${BOT_NAME}] cancelAllOrders ok: ${symbol}`); } catch (ec) { console.log(`[${BOT_NAME}] cancelAllOrders skip: ${ec.message}`); }
   try {
-    await exchange.createOrder(symbol, 'market', side === 'buy' ? 'sell' : 'buy', qty, undefined, {
-      tradeSide: 'close',
-      marginMode: 'cross',
-      marginCoin: 'USDT',
-    });
+    await exchange.createMarketOrder(symbol, side === 'buy' ? 'sell' : 'buy', qty, undefined, { tradeSide: 'close', marginCoin: 'USDT' });
     console.log(`[${BOT_NAME}] Pozitie inchisa: ${symbol}`);
     return true;
   } catch (e) {
