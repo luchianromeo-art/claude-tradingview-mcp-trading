@@ -66,11 +66,31 @@ async function githubPut(path, content, sha) {
 }
 
 async function loadPositions(filename) {
+<<<<<<< Updated upstream
   try {
     const res = await githubGet(filename);
     if (res.content) return { data: JSON.parse(Buffer.from(res.content, 'base64').toString('utf8')), sha: res.sha };
   } catch (e) {}
+=======
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await githubGet(filename);
+      if (res.content) {
+        const data = JSON.parse(Buffer.from(res.content, 'base64').toString('utf8'));
+        const keys = Object.keys(data).filter(k => k !== '_cooldown');
+        console.log(`[${BOT_NAME}] loadPositions ${filename}: ${keys.length} pozitii (attempt ${attempt})`);
+        return { data, sha: res.sha };
+      }
+      console.log(`[${BOT_NAME}] loadPositions ${filename}: no content (attempt ${attempt})`);
+    } catch (e) {
+      console.log(`[${BOT_NAME}] loadPositions error attempt ${attempt}: ${e.message}`);
+      if (attempt < 3) await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+  console.log(`[${BOT_NAME}] loadPositions FALLBACK la {} dupa 3 incercari`);
+>>>>>>> Stashed changes
   return { data: {}, sha: null };
+}
 }
 
 async function savePositions(filename, positions, sha) {
@@ -204,12 +224,17 @@ function calcQty(symbol, price) {
 
 // ─── CLOSE POSITION ───────────────────────────────────────────────────────────
 async function closePosition(symbol, side, qty) {
+<<<<<<< Updated upstream
+=======
+  try { await exchange.cancelAllOrders(symbol); console.log(`[${BOT_NAME}] cancelAllOrders ok: ${symbol}`); } catch (ec) { console.log(`[${BOT_NAME}] cancelAllOrders skip: ${ec.message}`); }
+>>>>>>> Stashed changes
   try {
     await exchange.createMarketOrder(symbol, side === 'buy' ? 'sell' : 'buy', qty, undefined, { reduceOnly: true, tradeSide: 'close' });
     console.log(`[${BOT_NAME}] Pozitie inchisa: ${symbol} qty=${qty}`);
     return true;
   } catch (e) {
     if (e.message && e.message.includes('22002')) {
+<<<<<<< Updated upstream
       try {
         const openPos = await exchange.fetchPositions([symbol]);
         const stillOpen = openPos.some(p => p.symbol === symbol && Math.abs(p.contracts) > 0);
@@ -223,6 +248,17 @@ async function closePosition(symbol, side, qty) {
         }
       } catch (e2) { console.log(`[${BOT_NAME}] 22002 fetchPositions error: ${e2.message}`); }
       console.log(`[${BOT_NAME}] 22002 — confirmata inchisa`); return true;
+=======
+      console.log(`[${BOT_NAME}] 22002 — retry direct fara reduceOnly`);
+      try {
+        await exchange.createMarketOrder(symbol, side === 'buy' ? 'sell' : 'buy', qty, undefined, { tradeSide: 'close' });
+        console.log(`[${BOT_NAME}] Retry reusit: ${symbol}`);
+        return true;
+      } catch (e2) {
+        console.log(`[${BOT_NAME}] Retry esuat (${e2.message}) — tratata ca inchisa`);
+        return true;
+      }
+>>>>>>> Stashed changes
     }
     console.error(`[${BOT_NAME}] closePosition error ${symbol}:`, e.message);
     return false;
