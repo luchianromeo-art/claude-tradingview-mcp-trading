@@ -1,26 +1,5 @@
 {
-  "_cooldown": {},
-  "BTC/USDT:USDT": {
-    "side": "buy",
-    "entryPrice": 78489.3,
-    "qty": 0.001,
-    "tp": 79431.1716,
-    "sl": 78018.3642,
-    "openTime": 1777851959697,
-    "maxPrice": 80408.3,
-    "minPrice": 78489.3,
-    "trailingActive": true,
-    "negativeRuns": 0,
-    "stagnantRuns": 0,
-    "lastPnl": 0.004005641533304466,
-    "indicators": {
-      "ema20": "78629.9036",
-      "ema50": "78446.3405",
-      "rsi14": "49.82",
-      "bbUpper": "79055.7373",
-      "bbLower": "78090.6827",
-      "bbWidth": "1.23",
-      "volRatio": "1.75"
-    }
+  "_cooldown": {
+    "BTC/USDT:USDT": 1777869927110
   }
 }
