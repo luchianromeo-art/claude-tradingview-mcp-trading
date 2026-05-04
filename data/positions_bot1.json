@@ -12,7 +12,7 @@
     "maxPrice": 79954.8,
     "minPrice": 79941.7,
     "trailingActive": false,
-    "negativeRuns": 1,
+    "negativeRuns": 2,
     "stagnantRuns": 0,
     "lastPnl": -0.003747731159082072
   },
@@ -26,7 +26,7 @@
     "maxPrice": 0.11247,
     "minPrice": 0.11247,
     "trailingActive": false,
-    "negativeRuns": 1,
+    "negativeRuns": 2,
     "stagnantRuns": 0,
     "lastPnl": -0.00026673779674581886
   }
