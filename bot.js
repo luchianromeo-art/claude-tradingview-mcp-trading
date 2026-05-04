@@ -183,19 +183,13 @@ function calcQty(symbol, price) {
 
 async function closePosition(symbol, side, qty) {
   try { await exchange.cancelAllOrders(symbol); console.log(`[${BOT_NAME}] cancelAllOrders ok: ${symbol}`); } catch (ec) { console.log(`[${BOT_NAME}] cancelAllOrders skip: ${ec.message}`); }
-  const sym = symbol.replace('/USDT:USDT', 'USDT');
   try {
-    await exchange.privatePostApiV2MixOrderPlaceOrder({
-      symbol: sym,
-      productType: 'USDT-FUTURES',
-      marginMode: 'crossed',
-      marginCoin: 'USDT',
-      side: side === 'buy' ? 'sell' : 'buy',
+    await exchange.createOrder(symbol, 'market', side === 'buy' ? 'sell' : 'buy', qty, undefined, {
       tradeSide: 'close',
-      orderType: 'market',
-      size: String(qty),
+      marginMode: 'cross',
+      marginCoin: 'USDT',
     });
-    console.log(`[${BOT_NAME}] Pozitie inchisa (native): ${symbol}`);
+    console.log(`[${BOT_NAME}] Pozitie inchisa: ${symbol}`);
     return true;
   } catch (e) {
     console.error(`[${BOT_NAME}] closePosition error: ${e.message}`);
