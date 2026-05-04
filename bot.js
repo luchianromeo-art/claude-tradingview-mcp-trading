@@ -181,13 +181,29 @@ function calcQty(symbol, price) {
   return qty;
 }
 
+async function cancelBitgetTPSL(symbol) {
+  const productId = symbol.replace('/USDT:USDT', 'USDT');
+  const path = '/api/v2/mix/order/cancel-plan-order';
+  const ts = Date.now().toString();
+  const bodyStr = JSON.stringify({ symbol: productId, productType: 'USDT-FUTURES', marginCoin: 'USDT' });
+  try {
+    await new Promise((resolve, reject) => {
+      const req = https.request({ hostname: 'api.bitget.com', path, method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'ACCESS-KEY': process.env.BITGET_API_KEY, 'ACCESS-SIGN': bitgetSign(ts, 'POST', path, bodyStr), 'ACCESS-TIMESTAMP': ts, 'ACCESS-PASSPHRASE': process.env.BITGET_PASSPHRASE, 'Content-Length': Buffer.byteLength(bodyStr) } },
+        (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(JSON.parse(d))); });
+      req.on('error', reject); req.write(bodyStr); req.end();
+    });
+    console.log(`[${BOT_NAME}] cancelTPSL ok: ${symbol}`);
+  } catch (e) { console.log(`[${BOT_NAME}] cancelTPSL skip: ${e.message}`); }
+}
+
 async function closePosition(symbol, side, qty) {
-  try { await exchange.cancelAllOrders(symbol); console.log(`[${BOT_NAME}] cancelAllOrders ok: ${symbol}`); } catch (ec) { console.log(`[${BOT_NAME}] cancelAllOrders skip: ${ec.message}`); }
+  await cancelBitgetTPSL(symbol);
+  try { await exchange.cancelAllOrders(symbol); } catch (ec) { }
   const productId = symbol.replace('/USDT:USDT', 'USDT');
   const path = '/api/v2/mix/order/place-order';
   const ts = Date.now().toString();
-  const bodyObj = { symbol: productId, productType: 'USDT-FUTURES', marginMode: 'crossed', marginCoin: 'USDT', side: side === 'buy' ? 'sell' : 'buy', tradeSide: 'close', orderType: 'market', size: String(qty) };
-  const bodyStr = JSON.stringify(bodyObj);
+  const bodyStr = JSON.stringify({ symbol: productId, productType: 'USDT-FUTURES', marginMode: 'crossed', marginCoin: 'USDT', side: side === 'buy' ? 'sell' : 'buy', tradeSide: 'close', orderType: 'market', size: String(qty) });
   try {
     const result = await new Promise((resolve, reject) => {
       const req = https.request({ hostname: 'api.bitget.com', path, method: 'POST',
@@ -195,8 +211,8 @@ async function closePosition(symbol, side, qty) {
         (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(JSON.parse(d))); });
       req.on('error', reject); req.write(bodyStr); req.end();
     });
-    if (result.code === '00000') { console.log(`[${BOT_NAME}] Pozitie inchisa (HTTP): ${symbol}`); return true; }
-    console.error(`[${BOT_NAME}] closePosition HTTP error: ${JSON.stringify(result)}`);
+    if (result.code === '00000') { console.log(`[${BOT_NAME}] Pozitie inchisa: ${symbol}`); return true; }
+    console.error(`[${BOT_NAME}] closePosition error: ${JSON.stringify(result)}`);
     return false;
   } catch (e) {
     console.error(`[${BOT_NAME}] closePosition error: ${e.message}`);
