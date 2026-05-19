@@ -550,8 +550,19 @@ async function main() {
       console.log(`[${BOT_NAME}] OPEN ${signal.side.toUpperCase()} ${symShort} @ ${signal.entryRef} | qty=${qty} | TP=${formatPrice(symbol, signal.tp)} | SL=${formatPrice(symbol, signal.sl)} | score=${signal.score}`);
 
       if (!PAPER_TRADING) {
-        const side = signal.side === 'long' ? 'buy' : 'sell';
-        await exchange.createMarketOrder(symbol, side, qty, undefined, { tradeSide: 'open', marginCoin: 'USDT' });
+        const openSide = signal.side === 'long' ? 'buy' : 'sell';
+        const productId = symbol.replace('/USDT:USDT', 'USDT');
+        const openPath = '/api/v2/mix/order/place-order';
+        const openTs = Date.now().toString();
+        const openBody = JSON.stringify({ symbol: productId, productType: 'USDT-FUTURES', marginMode: 'crossed', marginCoin: 'USDT', side: openSide, tradeSide: 'open', orderType: 'market', size: String(qty) });
+        const openResult = await new Promise((resolve, reject) => {
+          const req = https.request({ hostname: 'api.bitget.com', path: openPath, method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'ACCESS-KEY': process.env.BITGET_API_KEY, 'ACCESS-SIGN': bitgetSign(openTs, 'POST', openPath, openBody), 'ACCESS-TIMESTAMP': openTs, 'ACCESS-PASSPHRASE': process.env.BITGET_PASSPHRASE, 'Content-Length': Buffer.byteLength(openBody) } },
+            (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(JSON.parse(d))); });
+          req.on('error', reject); req.write(openBody); req.end();
+        });
+        if (openResult.code !== '00000') throw new Error('BitGet open error: ' + JSON.stringify(openResult));
+        console.log('[Bot3] Pozitie deschisa OK: ' + symbol);
       }
 
       positions[symbol] = {
